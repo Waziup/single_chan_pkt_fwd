@@ -1,0 +1,8 @@
+github.com/Waziup/wazigate-rpi/gpio v0.0.0-20191204155719-329ba73795d3 h1:pNK/k8YsJ7BBUw5RpEeuy4HBiNfVs2gnhUQUtK3yTiA=
+github.com/Waziup/wazigate-rpi/gpio v0.0.0-20191204155719-329ba73795d3/go.mod h1:uudwRClQumLa0Upn0MHp/wiRur6/OU4WgGMMxoUS7tc=
+github.com/Waziup/wazigate-rpi/spi v0.0.0-20191204155719-329ba73795d3 h1:ODHrbE8L9aqVXfnBFIMUOY10mt6Inbf9f5RZHlQTaAc=
+github.com/Waziup/wazigate-rpi/spi v0.0.0-20191204155719-329ba73795d3/go.mod h1:ixDNA9Hdy0DZuf61WGW8O1nIxEOUw+hKVvpyfvY8SJI=
+golang.org/x/sys v0.0.0-20191110163157-d32e6e3b99c4 h1:Hynbrlo6LbYI3H1IqXpkVDOcX/3HiPdhVEuyj5a59RM=
+golang.org/x/sys v0.0.0-20191110163157-d32e6e3b99c4/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
+golang.org/x/sys v0.0.0-20200202164722-d101bd2416d5 h1:LfCXLvNmTYH9kEmVgqbnsWfruoXZIrh4YBgqVHtDvw0=
+golang.org/x/sys v0.0.0-20200202164722-d101bd2416d5/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
