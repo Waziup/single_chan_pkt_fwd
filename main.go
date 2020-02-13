@@ -3,10 +3,11 @@ package main
 import (
 	"encoding/json"
 	"io/ioutil"
-	"log"
+	logger "log"
 	"math"
 	"net"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/Waziup/single_chan_pkt_fwd/SX127X"
@@ -27,34 +28,64 @@ var laddr = &net.UDPAddr{
 
 var socket *net.UDPConn
 
+const LogLevelNone = 0
+const LogLevelDebug = 5
+const LogLevelVerbose = 4
+const LogLevelNormal = 3
+const LogLevelWarning = 2
+const LogLevelError = 1
+
+var logLevel int = LogLevelVerbose
+
+var logLevelStr = []string{
+	"[     ] ",
+	"[ERR  ] ",
+	"[WARN ] ",
+	"",
+	"[VERBO] ",
+	"[DEBUG] ",
+}
+
+func fatal(format string, v ...interface{}) {
+	logger.Fatalf("[FATAL] "+format, v...)
+}
+
+func log(level int, format string, v ...interface{}) {
+	if level <= logLevel && level >= -1 && level < 6 {
+		logger.Printf(logLevelStr[level]+format, v...)
+	}
+}
+
 func main() {
+
+	logger.SetFlags(0)
 
 	data, err := ioutil.ReadFile("global_conf.json")
 	if err != nil {
-		log.Fatal(err)
+		fatal("%v", err)
 	}
 
 	var globalConfig GlobalConfig
 	err = json.Unmarshal(data, &globalConfig)
 	if err != nil {
-		log.Fatalf("can not parse 'global_conf.json': %v", err)
+		fatal("can not parse 'global_conf.json': %v", err)
 	}
 
 	if globalConfig.SX127XConf == nil {
-		log.Fatalf("no SX127X_conf in config")
+		fatal("no SX127X_conf in config")
 	}
 
 	if globalConfig.GatewayConfig == nil {
-		log.Fatalf("no gateway_conf in config")
+		fatal("no gateway_conf in config")
 	}
 
-	log.Printf("using %d servers for upstream", len(globalConfig.GatewayConfig.Servers))
+	log(LogLevelVerbose, "using %d servers for upstream", len(globalConfig.GatewayConfig.Servers))
 
 	servers = make([]*net.UDPAddr, 0, len(globalConfig.GatewayConfig.Servers))
 	i := 0
 	for _, server := range globalConfig.GatewayConfig.Servers {
 		if server.Enabled {
-			log.Printf(" server %d: %s:%d", i, server.Address, server.PortUp)
+			log(LogLevelVerbose, " server %d: %s:%d", i, server.Address, server.PortUp)
 			i++
 			servers = append(servers, &net.UDPAddr{
 				Port: server.PortUp,
@@ -63,19 +94,19 @@ func main() {
 		}
 	}
 
-	// gwid, err := strconv.ParseInt(globalConfig.GatewayConfig.GatewayID, 16, 64)
-	// if err != nil {
-	// 	log.Fatalf("can not parse gateway_ID: %v", err)
-	// }
+	gwid, err := strconv.ParseUint(globalConfig.GatewayConfig.GatewayID, 16, 64)
+	if err != nil {
+		fatal("can not parse gateway_ID: %v", err)
+	}
 
-	log.Printf("center frequency: %.2f Mhz", float64(globalConfig.SX127XConf.Freq)/1e6)
-	log.Printf("spreading factor: SF%d", globalConfig.SX127XConf.Datarate)
+	log(LogLevelVerbose, "center frequency: %.2f Mhz", float64(globalConfig.SX127XConf.Freq)/1e6)
+	log(LogLevelVerbose, "spreading factor: SF%d", globalConfig.SX127XConf.Datarate)
 
-	log.Printf("this is gateway id %X", gwid)
+	log(LogLevelVerbose, "this is gateway id %X", gwid)
 
 	socket, err = net.ListenUDP("udp", laddr)
 	if err != nil {
-		log.Fatal(err)
+		fatal("%v", err)
 	}
 
 	upstream(&fwd.Packet{
@@ -100,17 +131,17 @@ func run(cfg *lora.Config) {
 
 	radio, err := SX127X.Discover()
 	if err != nil {
-		log.Fatalf("can not activate radio: %v", err)
+		fatal("can not activate radio: %v", err)
 	}
 
-	log.Printf("radio %s activated.", radio.Name())
+	log(LogLevelNormal, "radio %s activated.", radio.Name())
 
-	radio.Logger = log.New(os.Stdout, "radio: ", log.Flags())
-	radio.LogLevel = SX127X.LogLevelVerbose
+	radio.Logger = logger.New(os.Stdout, "[RADIO] ", 0)
+	radio.LogLevel = logLevel
 
 	err = radio.Init()
 	if err != nil {
-		log.Fatalf("can not init radio: %v", err)
+		fatal("can not init radio: %v", err)
 	}
 
 	doReceive := false
@@ -120,9 +151,9 @@ func run(cfg *lora.Config) {
 		if !doReceive {
 			err := radio.Receive(cfg)
 			if err != nil {
-				log.Fatalf("can not receive: %v", err)
+				fatal("can not receive: %v", err)
 			}
-			log.Println("waiting for packets ...")
+			log(LogLevelNormal, "waiting for packets ...")
 			doReceive = true
 		}
 
@@ -132,13 +163,13 @@ func run(cfg *lora.Config) {
 		select {
 		case pkt := <-chanTx:
 
-			log.Printf("received from upstream: %+v", pkt)
+			log(LogLevelNormal, "received from upstream: %+v", pkt)
 
 			if pkt.Immediate {
-				log.Printf("sending immediate packet ...")
+				log(LogLevelNormal, "sending immediate packet ...")
 				doReceive = false
 				if err = radio.Send(pkt); err != nil {
-					log.Printf("can not send packet: %v", err)
+					log(LogLevelError, "can not send packet: %v", err)
 				}
 
 				continue
@@ -173,14 +204,14 @@ func run(cfg *lora.Config) {
 		case <-timerReceive.C:
 			pkts, err := radio.GetPacket()
 			if err != nil {
-				log.Fatalf("can not receive packets: %v", err)
+				fatal("can not receive packets: %v", err)
 			}
 			if pkts != nil {
 				doReceive = false
 				for _, pkt := range pkts {
-					log.Printf("> %#v", pkt)
+					log(LogLevelNormal, "> %#v", pkt)
 				}
-				log.Printf("received %d packets, pushing to upstream ...", len(pkts))
+				log(LogLevelNormal, "received %d packets, pushing to upstream ...", len(pkts))
 				upstream(&fwd.Packet{
 					Token:     fwd.RndToken(),
 					GatewayID: gwid,
@@ -197,11 +228,11 @@ func run(cfg *lora.Config) {
 			pkt := queue.pkt
 			queue = queue.next
 
-			log.Printf("< %#v", pkt)
+			log(LogLevelNormal, "< %#v", pkt)
 
 			doReceive = false
 			if err = radio.Send(pkt); err != nil {
-				log.Printf("can not send packet: %v", err)
+				log(LogLevelError, "can not send packet: %v", err)
 			}
 
 			if !timerSend.Stop() {
@@ -221,18 +252,18 @@ func run(cfg *lora.Config) {
 }
 
 func upstream(pkt *fwd.Packet) {
-	//log.Printf("upstream %+v", pkts)
+	//log(LogLevelNormal, "upstream %+v", pkts)
 	data, err := pkt.MarshalBinary()
 	if err != nil {
-		log.Printf("can not upstream packet: %v", err)
+		log(LogLevelError, "can not upstream packet: %v", err)
 		return
 	}
 
 	for _, server := range servers {
 		if _, err := socket.WriteToUDP(data, server); err != nil {
-			log.Printf("(-> %s) can not write upstream: %v", server, err)
+			log(LogLevelError, "(-> %s) can not write upstream: %v", server, err)
 		} else {
-			log.Printf("(-> %s) sent %s packet (token: %v)", server, pkt.Ident, pkt.Token)
+			log(LogLevelNormal, "(-> %s) sent %s packet (token: %v)", server, pkt.Ident, pkt.Token)
 		}
 	}
 }
@@ -244,18 +275,18 @@ func downstream() {
 	for true {
 		l, raddr, err := socket.ReadFromUDP(buffer[:])
 		if err != nil {
-			log.Fatal(err)
+			fatal("%v", err)
 		}
 
 		var pkt = fwd.Packet{}
 		err = pkt.UnmarshalBinary(buffer[:l])
 		if err != nil {
-			log.Printf("(<- %s) can not unmarshal downstream packet: %v", raddr, err)
-			log.Printf("data: %q", buffer[:l])
+			log(LogLevelError, "(<- %s) can not unmarshal downstream packet: %v", raddr, err)
+			log(LogLevelNormal, "data: %q", buffer[:l])
 			continue
 		}
 
-		log.Printf("(<- %s) received %s packet (token: %v)", raddr, pkt.Ident, pkt.Token)
+		log(LogLevelNormal, "(<- %s) received %s packet (token: %v)", raddr, pkt.Ident, pkt.Token)
 
 		if pkt.TxPacket != nil {
 
