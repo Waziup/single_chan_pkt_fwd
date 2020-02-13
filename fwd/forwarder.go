@@ -138,7 +138,7 @@ func (p *Packet) UnmarshalBinary(buf []byte) error {
 	if buf[0] != 0x02 {
 		return fmt.Errorf("can not handle version: 0x%x", buf[0])
 	}
-	copy(p.Token[:], buf[1:2])
+	copy(p.Token[:], buf[1:3])
 	switch buf[3] {
 	case PushAck, PullAck:
 		return nil
