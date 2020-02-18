@@ -62,8 +62,14 @@ type TxAckMsg struct {
 
 type Ident uint8
 
+type Token [2]byte
+
+func (t Token) String() string {
+	return fmt.Sprintf("%X", int(t[1])<<8+int(t[0]))
+}
+
 type Packet struct {
-	Token     [2]byte          `json:"-"`
+	Token     Token            `json:"-"`
 	Ident     Ident            `json:"-"`
 	GatewayID uint64           `json:"-"`
 	Stat      *Stat            `json:"stat,omitempty"`
@@ -72,13 +78,31 @@ type Packet struct {
 	TxAck     TxAckError       `json:"txpk_ack,omitempty"`
 }
 
+func (pkt *Packet) String() string {
+	switch pkt.Ident {
+	case PullData:
+		return fmt.Sprintf("%s: Token: %s, Gateway ID: %X", pkt.Ident, pkt.Token, pkt.GatewayID)
+	case PullAck:
+		return fmt.Sprintf("%s: Token: %s", pkt.Ident, pkt.Token)
+	case PushData:
+		return fmt.Sprintf("%s: Token: %s, Gateway ID: %X, %d rx packets", pkt.Ident, pkt.Token, pkt.GatewayID, len(pkt.RxPackets))
+	case PushAck:
+		return fmt.Sprintf("%s: Token: %s", pkt.Ident, pkt.Token)
+	case PullResp:
+		return fmt.Sprintf("%s: Token: %s, 1 tx packet", pkt.Ident, pkt.Token)
+	case TxAck:
+		return fmt.Sprintf("%s: Token: %s, Gateway ID: %X", pkt.Ident, pkt.Token, pkt.GatewayID)
+	}
+	return "(unknwon packet)"
+}
+
 func (i Ident) String() string {
 	var iStr = []string{
 		"PushData",
 		"PushAck",
 		"PullData",
 		"PullResp",
-		"PullResp",
+		"PullAck",
 		"TxAck",
 	}
 	if i < 0 || int(i) >= len(iStr) {
@@ -132,14 +156,15 @@ func (p *Packet) MarshalBinary() ([]byte, error) {
 
 func (p *Packet) UnmarshalBinary(buf []byte) error {
 
-	if len(buf) < 3 {
+	if len(buf) < 4 {
 		return fmt.Errorf("buffer to short")
 	}
 	if buf[0] != 0x02 {
 		return fmt.Errorf("can not handle version: 0x%x", buf[0])
 	}
 	copy(p.Token[:], buf[1:3])
-	switch buf[3] {
+	p.Ident = Ident(buf[3])
+	switch p.Ident {
 	case PushAck, PullAck:
 		return nil
 	case PullResp:

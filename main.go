@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"io/ioutil"
 	logger "log"
 	"math"
@@ -35,13 +36,13 @@ const LogLevelNormal = 3
 const LogLevelWarning = 2
 const LogLevelError = 1
 
-var logLevel int = LogLevelVerbose
+var logLevel int = LogLevelNormal
 
 var logLevelStr = []string{
 	"[     ] ",
 	"[ERR  ] ",
 	"[WARN ] ",
-	"",
+	"[     ] ",
 	"[VERBO] ",
 	"[DEBUG] ",
 }
@@ -60,9 +61,30 @@ func main() {
 
 	logger.SetFlags(0)
 
+	ll := flag.String("l", "", "log level: error, warn, verbose, debug, none")
+	flag.Parse()
+
+	switch *ll {
+	case "", "normal":
+		// logLevel = LogLevelNormal
+	case "error", "e":
+		logLevel = LogLevelError
+	case "warn", "w":
+		logLevel = LogLevelWarning
+	case "verbose", "v":
+		logLevel = LogLevelVerbose
+	case "debug", "d":
+		logLevel = LogLevelDebug
+	case "none", "n":
+		logLevel = LogLevelNone
+	default:
+		fatal("unknown log level (-l): %q", *ll)
+	}
+
 	data, err := ioutil.ReadFile("global_conf.json")
 	if err != nil {
-		fatal("%v", err)
+		dir, _ := os.Getwd()
+		fatal("open %s/global_conf.json: %v", dir, err)
 	}
 
 	var globalConfig GlobalConfig
@@ -85,16 +107,28 @@ func main() {
 	i := 0
 	for _, server := range globalConfig.GatewayConfig.Servers {
 		if server.Enabled {
-			log(LogLevelVerbose, " server %d: %s:%d", i, server.Address, server.PortUp)
+
 			i++
+			ip := net.ParseIP(server.Address)
+			if ip == nil {
+				addr, err := net.LookupIP(server.Address)
+				if err != nil {
+					log(LogLevelError, " server %d: %s:%d: %v", i, server.Address, server.PortUp, err)
+					continue
+				}
+				ip = addr[0]
+				log(LogLevelVerbose, " server %d: %s:%d (%s:%d)", i, server.Address, server.PortUp, ip, server.PortUp)
+			} else {
+				log(LogLevelVerbose, " server %d: %s:%d", i, server.Address, server.PortUp)
+			}
 			servers = append(servers, &net.UDPAddr{
 				Port: server.PortUp,
-				IP:   net.ParseIP(server.Address),
+				IP:   ip,
 			})
 		}
 	}
 
-	gwid, err := strconv.ParseUint(globalConfig.GatewayConfig.GatewayID, 16, 64)
+	gwid, err = strconv.ParseUint(globalConfig.GatewayConfig.GatewayID, 16, 64)
 	if err != nil {
 		fatal("can not parse gateway_ID: %v", err)
 	}
@@ -108,11 +142,12 @@ func main() {
 	if err != nil {
 		fatal("%v", err)
 	}
+	laddr = socket.LocalAddr().(*net.UDPAddr)
+	log(LogLevelNormal, "listening on %s", laddr)
 
 	upstream(&fwd.Packet{
-		Ident:     fwd.PullData,
-		Token:     fwd.RndToken(),
-		GatewayID: gwid,
+		Ident: fwd.PullData,
+		Token: fwd.RndToken(),
 	})
 
 	go downstream()
@@ -136,7 +171,7 @@ func run(cfg *lora.Config) {
 
 	log(LogLevelNormal, "radio %s activated.", radio.Name())
 
-	radio.Logger = logger.New(os.Stdout, "[RADIO] ", 0)
+	radio.Logger = logger.New(os.Stdout, "", 0)
 	radio.LogLevel = logLevel
 
 	err = radio.Init()
@@ -145,6 +180,7 @@ func run(cfg *lora.Config) {
 	}
 
 	doReceive := false
+	timerSend := time.NewTimer(never)
 
 	for true {
 
@@ -158,12 +194,11 @@ func run(cfg *lora.Config) {
 		}
 
 		timerReceive := time.NewTimer(checkReceived)
-		timerSend := time.NewTimer(never)
 
 		select {
 		case pkt := <-chanTx:
 
-			log(LogLevelNormal, "received from upstream: %+v", pkt)
+			log(LogLevelNormal, "received packet from upstream")
 
 			if pkt.Immediate {
 				log(LogLevelNormal, "sending immediate packet ...")
@@ -200,6 +235,11 @@ func run(cfg *lora.Config) {
 					}
 				}
 			}
+			queueSize++
+
+			diff := baseTime.Add(time.Duration(queue.pkt.CountUs) * time.Microsecond).Sub(time.Now())
+			log(LogLevelNormal, "tx queue: %d packets, next packet in %s", queueSize, diff)
+			timerSend.Reset(diff)
 
 		case <-timerReceive.C:
 			pkts, err := radio.GetPacket()
@@ -209,12 +249,13 @@ func run(cfg *lora.Config) {
 			if pkts != nil {
 				doReceive = false
 				for _, pkt := range pkts {
-					log(LogLevelNormal, "> %#v", pkt)
+					// pkt.StatCRC = 1
+					pkt.CountUs = uint32(time.Now().Sub(baseTime) / time.Microsecond)
+					log(LogLevelNormal, "rx: %s", pkt)
 				}
 				log(LogLevelNormal, "received %d packets, pushing to upstream ...", len(pkts))
 				upstream(&fwd.Packet{
 					Token:     fwd.RndToken(),
-					GatewayID: gwid,
 					Ident:     fwd.PushData,
 					RxPackets: pkts,
 				})
@@ -227,22 +268,24 @@ func run(cfg *lora.Config) {
 			}
 			pkt := queue.pkt
 			queue = queue.next
+			queueSize--
 
-			log(LogLevelNormal, "< %#v", pkt)
+			log(LogLevelNormal, "tx: %s", pkt)
 
 			doReceive = false
 			if err = radio.Send(pkt); err != nil {
-				log(LogLevelError, "can not send packet: %v", err)
+				log(LogLevelError, "tx: can not send packet: %v", err)
 			}
 
-			if !timerSend.Stop() {
-				<-timerSend.C // drain
-			}
+			log(LogLevelNormal, "tx: ok")
 
-			if queue != nil {
-				timerSend.Reset(baseTime.Add(time.Duration(queue.pkt.CountUs) * time.Microsecond).Sub(time.Now()))
-			} else {
+			if queue == nil {
 				timerSend.Reset(never)
+				log(LogLevelNormal, "tx queue: 0 packets (no pending packets)")
+			} else {
+				diff := baseTime.Add(time.Duration(queue.pkt.CountUs) * time.Microsecond).Sub(time.Now())
+				log(LogLevelNormal, "tx queue: %d packets, next packet in %s", queueSize, diff)
+				timerSend.Reset(diff)
 			}
 
 		case <-tickerKeepalive.C:
@@ -252,18 +295,26 @@ func run(cfg *lora.Config) {
 }
 
 func upstream(pkt *fwd.Packet) {
-	//log(LogLevelNormal, "upstream %+v", pkts)
+	pkt.GatewayID = gwid
 	data, err := pkt.MarshalBinary()
 	if err != nil {
 		log(LogLevelError, "can not upstream packet: %v", err)
+		log(LogLevelError, "packet: %+v", pkt)
 		return
 	}
 
+	log(LogLevelDebug, "(-> *) raw: %q", data)
+
+	if logLevel >= LogLevelDebug {
+		pktJSON, err := json.Marshal(pkt)
+		log(LogLevelDebug, "pkt json: %s (err:%v)", pktJSON, err)
+	}
+
 	for _, server := range servers {
-		if _, err := socket.WriteToUDP(data, server); err != nil {
+		if _, err = socket.WriteToUDP(data, server); err != nil {
 			log(LogLevelError, "(-> %s) can not write upstream: %v", server, err)
 		} else {
-			log(LogLevelNormal, "(-> %s) sent %s packet (token: %v)", server, pkt.Ident, pkt.Token)
+			log(LogLevelNormal, "(-> %s) %s", server, pkt)
 		}
 	}
 }
@@ -278,7 +329,9 @@ func downstream() {
 			fatal("%v", err)
 		}
 
-		var pkt = fwd.Packet{}
+		log(LogLevelDebug, "(<- %s) raw: %q", raddr, buffer[:l])
+
+		var pkt = &fwd.Packet{}
 		err = pkt.UnmarshalBinary(buffer[:l])
 		if err != nil {
 			log(LogLevelError, "(<- %s) can not unmarshal downstream packet: %v", raddr, err)
@@ -286,17 +339,16 @@ func downstream() {
 			continue
 		}
 
-		log(LogLevelNormal, "(<- %s) received %s packet (token: %v)", raddr, pkt.Ident, pkt.Token)
+		log(LogLevelNormal, "(<- %s) %s", raddr, pkt)
 
 		if pkt.TxPacket != nil {
 
 			chanTx <- pkt.TxPacket
 
 			upstream(&fwd.Packet{
-				Token:     pkt.Token,
-				GatewayID: gwid,
-				Ident:     fwd.TxAck,
-				TxAck:     fwd.NoError,
+				Token: pkt.Token,
+				Ident: fwd.TxAck,
+				TxAck: fwd.NoError,
 			})
 		}
 	}
@@ -310,3 +362,5 @@ type Queue struct {
 }
 
 var queue *Queue
+
+var queueSize int

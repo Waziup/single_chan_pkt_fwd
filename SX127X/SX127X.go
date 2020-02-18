@@ -61,7 +61,7 @@ var logLevel = []string{
 	"[     ] ",
 	"[ERR  ] ",
 	"[WARN ] ",
-	"",
+	"[     ] ",
 	"[VERBO] ",
 	"[DEBUG] ",
 }
@@ -630,12 +630,6 @@ var ErrTimeout = fmt.Errorf("timeout")
 
 func (c *Chip) Receive(cfg *lora.Config) error {
 
-	if err := c.SetFreq(cfg.Freq); err != nil {
-		return err
-	}
-
-	c.SetPowerDBM(14)
-
 	var bw byte
 	switch cfg.LoRaBW {
 	case 7800:
@@ -662,9 +656,30 @@ func (c *Chip) Receive(cfg *lora.Config) error {
 		return fmt.Errorf("unknown bandwidth: %d", cfg.LoRaBW)
 	}
 
-	c.setCR(CR_5)
-	c.setBW(bw)
-	c.setSF(cfg.Datarate)
+	var cr byte = CR_5
+	sf := cfg.Datarate
+
+	if c.codingRate != cr {
+		if err := c.setCR(cr); err != nil {
+			return err
+		}
+	}
+	if c.spreadingFactor != sf {
+		if err := c.setSF(sf); err != nil {
+			return err
+		}
+	}
+	if c.bandwidth != bw {
+		if err := c.setBW(bw); err != nil {
+			return err
+		}
+	}
+
+	if err := c.SetFreq(cfg.Freq); err != nil {
+		return err
+	}
+
+	c.SetPowerDBM(14)
 
 	// c.bandwidth = bw
 	// c.spreadingFactor = cfg.Datarate
@@ -694,7 +709,6 @@ func (c *Chip) GetPacket() ([]*lora.RxPacket, error) {
 	rssi, _ := c.GetRSSIpacket()
 	snr, _ := c.getSNR()
 	pkt := &lora.RxPacket{
-		Time:       time.Now(),
 		RSSI:       float32(rssi),
 		Data:       data,
 		StatCRC:    crc,
@@ -1142,7 +1156,7 @@ func (c *Chip) setSF(spr uint32) (err error) {
 	// Check if it is neccesary to set special settings for SF=6
 	if spr == SF_6 {
 		// Mandatory headerOFF with SF = 6 (Implicit mode)
-		c.setHeaderOFF()
+		// c.setHeaderOFF()
 
 		// Set the bit field DetectionOptimize of
 		// register RegLoRaDetectOptimize to value "0b101".
@@ -1152,7 +1166,7 @@ func (c *Chip) setSF(spr uint32) (err error) {
 		c.writeRegister(REG_DETECTION_THRESHOLD, 0x0C)
 	} else {
 		// added by C. Pham
-		c.setHeaderON()
+		// c.setHeaderON()
 
 		// LoRa detection Optimize: 0x03 --> SF7 to SF12
 		c.writeRegister(REG_DETECT_OPTIMIZE, 0x03)

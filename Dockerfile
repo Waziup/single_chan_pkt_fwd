@@ -1,12 +1,11 @@
 FROM golang:1.12-alpine AS development
 
-ENV PROJECT_PATH=/single_chan_pkt_fwd
 ENV CGO_ENABLED=0
 
 RUN apk add --no-cache ca-certificates git
 
-COPY . $PROJECT_PATH
-WORKDIR $PROJECT_PATH
+COPY . /single_chan_pkt_fwd
+WORKDIR /single_chan_pkt_fwd
 
 RUN go build -o build/single_chan_pkt_fwd .
 

@@ -3,6 +3,7 @@ package lora
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -43,7 +44,7 @@ type TxPacket struct {
 	Data []byte // packet payload
 }
 
-func (tx *TxPacket) UnarshalJSON([]byte) error {
+func (tx *TxPacket) UnmarshalJSON(data []byte) error {
 
 	var txpk = struct {
 		Immediate  bool        `json:"imme"` // "immediate" tag -> Class C
@@ -63,6 +64,10 @@ func (tx *TxPacket) UnarshalJSON([]byte) error {
 		FreqDev        float32 `json:"fdev"` // frequency deviation in kHz (mandatory) (FSK only)
 		Data           string  `json:"data"` // payload data (mandatory)
 	}{}
+
+	if err := json.Unmarshal(data, &txpk); err != nil {
+		return err
+	}
 
 	tx.Immediate = txpk.Immediate
 	tx.CountUs = txpk.CountUs
@@ -99,7 +104,7 @@ func (tx *TxPacket) UnarshalJSON([]byte) error {
 			tx.LoRaBW = 6
 		case 62:
 			tx.LoRaBW = 7
-		case 128:
+		case 125:
 			tx.LoRaBW = 8
 		case 250:
 			tx.LoRaBW = 9
@@ -146,6 +151,17 @@ func (tx *TxPacket) UnarshalJSON([]byte) error {
 	return nil
 }
 
+func (tx *TxPacket) String() string {
+	data := base64.StdEncoding.EncodeToString(tx.Data)
+	if tx.Modulation == "LORA" {
+		return fmt.Sprintf("LoRa: %.2f MHz, SF%d %s CR4/%d, Data: %s", float64(tx.Freq)/1e6, tx.Datarate, bwStr[tx.LoRaBW], tx.LoRaCR, data)
+	}
+	if tx.Modulation == "FSK" {
+		return fmt.Sprintf("FSK: %.2f MHz, Bitrate %d, Data: %s", float64(tx.Freq)/1e6, tx.Datarate, data)
+	}
+	return ""
+}
+
 var bwStr = []string{
 	"",
 	"BW7.8",
@@ -162,7 +178,7 @@ var bwStr = []string{
 
 // RxPacket
 type RxPacket struct {
-	Time time.Time // UTC time of pkt RX
+	Time *time.Time // UTC time of pkt RX
 	// TimeGPS time.Time // GPS time of pkt RX
 	// TimeFin time.Time // Internal timestamp of "RX finished" event
 
@@ -194,8 +210,12 @@ type RxPacket struct {
 
 func (rx *RxPacket) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
-	fmt.Fprintf(&buf, "{\"tmst\":%d", rx.CountUs)
-	fmt.Fprintf(&buf, ",\"time\":\"%s\"", rx.Time.Format(time.RFC3339)) /* ISO 8601 format */
+	fmt.Fprintf(&buf, "{")
+	if rx.Time != nil {
+		fmt.Fprintf(&buf, "\"time\":\"%s\"", rx.Time.Format(time.RFC3339)) /* ISO 8601 format */
+	} else {
+		fmt.Fprintf(&buf, "\"tmst\":%d", rx.CountUs)
+	}
 	fmt.Fprintf(&buf, ",\"chan\":%d", rx.ChainIF)
 	fmt.Fprintf(&buf, ",\"rfch\":%d", rx.ChainRF)
 	fmt.Fprintf(&buf, ",\"freq\":%.6f", float64(rx.Freq)/1e6)
@@ -213,6 +233,17 @@ func (rx *RxPacket) MarshalJSON() ([]byte, error) {
 	fmt.Fprintf(&buf, ",\"size\":%d", len(rx.Data))
 	fmt.Fprintf(&buf, ",\"data\":\"%s\"}", base64.StdEncoding.EncodeToString(rx.Data))
 	return buf.Bytes(), nil
+}
+
+func (rx *RxPacket) String() string {
+	data := base64.StdEncoding.EncodeToString(rx.Data)
+	if rx.Modulation == "LORA" {
+		return fmt.Sprintf("LoRa: %.2f MHz, SF%d %s CR4/%d, Data: %s", float64(rx.Freq)/1e6, rx.Datarate, bwStr[rx.LoRaBW], rx.LoRaCR, data)
+	}
+	if rx.Modulation == "FSK" {
+		return fmt.Sprintf("FSK: %.2f MHz, Bitrate %d, Data: %s", float64(rx.Freq)/1e6, rx.Datarate, data)
+	}
+	return ""
 }
 
 type Config struct {
