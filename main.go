@@ -160,7 +160,7 @@ var never = time.Duration(math.MaxInt64)
 
 var checkReceived = time.Millisecond * 500
 
-var tickerKeepalive = time.NewTicker(time.Second * 10)
+var tickerKeepalive = time.NewTicker(time.Second * 60)
 
 func run(cfg *lora.Config) {
 
@@ -290,6 +290,10 @@ func run(cfg *lora.Config) {
 
 		case <-tickerKeepalive.C:
 
+			upstream(&fwd.Packet{
+				Ident: fwd.PullData,
+				Token: fwd.RndToken(),
+			})
 		}
 	}
 }
