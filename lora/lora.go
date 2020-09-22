@@ -24,10 +24,12 @@ type TxPacket struct {
 	Modulation string // Modulation identifier "LORA" or "FSK"
 
 	// LoRa only
+
 	LoRaBW uint8 // LoRa bandwith: BW7K8 (0x01), BW10K4 (0x02), BW15K6 (0x03), BW20K8 (0x04), BW31K2 (0x05), BW41K7 (0x06), BW62K5 (0x07), BW125K (0x08), BW250K (0x09), BW500K (0x0a)
 	LoRaCR uint8 // LoRa ECC coding rate: 4/5 (0x05), 4/6 (0x06), 4/7 (0x07), 4/8 (0x08)
 
 	// LoRa only
+
 	InvertPolar bool // Lora modulation polarization inversion
 
 	// LoRa: LoRa spreading factor: SF7 (0x07) to SF12 (0x0c)
@@ -159,7 +161,7 @@ func (tx *TxPacket) String() string {
 	if tx.Modulation == "FSK" {
 		return fmt.Sprintf("FSK: %.2f MHz, Bitrate %d, Data: %s", float64(tx.Freq)/1e6, tx.Datarate, data)
 	}
-	return ""
+	return "<unknown modulation>"
 }
 
 var bwStr = []string{
@@ -251,8 +253,10 @@ type Config struct {
 
 	Modulation string `json:"modulation"` // Modulation identifier "LORA" or "FSK"
 
-	// LoRa only
+	// LoRa: Bandwidth 7800 .. 125000, 250000, 500000
 	LoRaBW uint32 `json:"bandwidth"` // LoRa bandwidth
+	// LoRa: Coderate 4/5 (0x05), 4/6 (0x06), 4/7 (0x07), 4/8 (0x08)
+	LoRaCR string `json:"coderate"` // LoRa coderate
 
 	// LoRa: LoRa spreading factor: SF7 (0x07) to SF12 (0x0c)
 	// FSK: Datarate (bits per second)

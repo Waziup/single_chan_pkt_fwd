@@ -14,6 +14,7 @@ import (
 	"github.com/Waziup/single_chan_pkt_fwd/SX127X"
 	"github.com/Waziup/single_chan_pkt_fwd/fwd"
 	"github.com/Waziup/single_chan_pkt_fwd/lora"
+	"github.com/Waziup/single_chan_pkt_fwd/tools"
 )
 
 var gwid uint64
@@ -101,6 +102,13 @@ func main() {
 		fatal("no gateway_conf in config")
 	}
 
+	if globalConfig.SX127XConf.LoRaBW == 0 {
+		globalConfig.SX127XConf.LoRaBW = 125000 // BW 125
+	}
+	if globalConfig.SX127XConf.LoRaCR == "" {
+		globalConfig.SX127XConf.LoRaCR = "4/5" //CR 4/5
+	}
+
 	log(LogLevelVerbose, "using %d servers for upstream", len(globalConfig.GatewayConfig.Servers))
 
 	servers = make([]*net.UDPAddr, 0, len(globalConfig.GatewayConfig.Servers))
@@ -174,10 +182,25 @@ func run(cfg *lora.Config) {
 	radio.Logger = logger.New(os.Stdout, "", 0)
 	radio.LogLevel = logLevel
 
-	err = radio.Init()
-	if err != nil {
-		fatal("can not init radio: %v", err)
-	}
+	time.Sleep(time.Millisecond * 500)
+
+	// for true {
+	// 	pkt := &lora.TxPacket{
+	// 		Modulation: "LORA",
+	// 		LoRaBW:     0x08,
+	// 		Freq:       868100000,
+	// 		LoRaCR:     0x05,
+	// 		Datarate:   0x0c,
+	// 		Power:      14, // max
+	// 		Data:       []byte("Hello World :D"),
+	// 	}
+	// 	log(0, "tx: %s", pkt)
+	// 	if err = radio.Send(pkt); err != nil {
+	// 		log(LogLevelError, "can not send packet: %v", err)
+	// 	}
+	// 	log(0, "tx: ok")
+	// 	time.Sleep(time.Second * 40)
+	// }
 
 	doReceive := false
 	timerSend := time.NewTimer(never)
@@ -210,36 +233,52 @@ func run(cfg *lora.Config) {
 				continue
 			}
 
-			// enqueue packet
-			if queue == nil {
-				queue = &Queue{pkt: pkt}
-			} else {
-				if queue.pkt.CountUs > pkt.CountUs {
-					queue = &Queue{
-						next: queue,
-						pkt:  pkt,
-					}
-				} else {
-					for q := queue; ; q = q.next {
-						if q.next == nil {
-							q.next = &Queue{pkt: pkt}
-							break
-						}
-						if q.next.pkt.CountUs > pkt.CountUs {
-							q.next = &Queue{
-								next: q.next,
-								pkt:  pkt,
-							}
-							break
-						}
-					}
-				}
-			}
-			queueSize++
+			pkt.Power = 14
+			doReceive = false
 
-			diff := baseTime.Add(time.Duration(queue.pkt.CountUs) * time.Microsecond).Sub(time.Now())
-			log(LogLevelNormal, "tx queue: %d packets, next packet in %s", queueSize, diff)
-			timerSend.Reset(diff)
+			diff := baseTime.Add(time.Duration(pkt.CountUs) * time.Microsecond).Sub(time.Now())
+			log(LogLevelNormal, "sending packet in %s", diff)
+			// diff -= 200 * time.Microsecond
+			// time.Sleep(diff)
+			tools.Nanosleep(int32(diff / time.Nanosecond))
+			log(LogLevelNormal, "tx: %s", pkt)
+			radio.SetIQInversion(true)
+			if err = radio.Send(pkt); err != nil {
+				log(LogLevelError, "can not send packet: %v", err)
+			}
+			radio.SetIQInversion(false)
+			log(LogLevelNormal, "tx: ok")
+
+			// enqueue packet
+			// if queue == nil {
+			// 	queue = &Queue{pkt: pkt}
+			// } else {
+			// 	if queue.pkt.CountUs > pkt.CountUs {
+			// 		queue = &Queue{
+			// 			next: queue,
+			// 			pkt:  pkt,
+			// 		}
+			// 	} else {
+			// 		for q := queue; ; q = q.next {
+			// 			if q.next == nil {
+			// 				q.next = &Queue{pkt: pkt}
+			// 				break
+			// 			}
+			// 			if q.next.pkt.CountUs > pkt.CountUs {
+			// 				q.next = &Queue{
+			// 					next: q.next,
+			// 					pkt:  pkt,
+			// 				}
+			// 				break
+			// 			}
+			// 		}
+			// 	}
+			// }
+			// queueSize++
+
+			// diff = 0 * time.Millisecond
+			// log(LogLevelNormal, "tx queue: %d packets, next packet in %s", queueSize, diff)
+			// timerSend.Reset(diff)
 
 		case <-timerReceive.C:
 			pkts, err := radio.GetPacket()

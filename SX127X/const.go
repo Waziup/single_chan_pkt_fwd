@@ -62,6 +62,9 @@ const (
 	REG_PREAMBLE_MSB_FSK        = 0x25
 	REG_FIFO_RX_BYTE_ADDR       = 0x25
 	REG_PREAMBLE_LSB_FSK        = 0x26
+
+	REG_INVERT_IQ  = 0x33
+	REG_INVERT_IQ2 = 0x3B
 	// added by C. Pham
 	REG_MODEM_CONFIG3 = 0x26
 	// end

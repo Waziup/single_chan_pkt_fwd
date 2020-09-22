@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"github.com/Waziup/single_chan_pkt_fwd/lora"
@@ -51,8 +52,7 @@ type Chip struct {
 	codingRate      byte
 	bandwidth       byte
 	header          bool
-	nodeAddress     byte
-	needPABOOST     bool
+	NeedPABOOST     bool
 	power           byte
 	channel         uint32
 }
@@ -67,7 +67,7 @@ var logLevel = []string{
 }
 
 var LogLevel = LogLevelNone
-var Logger *log.Logger
+var Logger *log.Logger = log.New(os.Stdout, "[LORA ] ", 0)
 
 const (
 	PrivateSyncWord = 0x12
@@ -81,8 +81,9 @@ func New(dev *spi.Device, pinSS gpio.Pin, pinRst gpio.Pin) *Chip {
 		pinRst:          pinRst,
 		defaultSyncWord: PublicSyncWord,
 		spreadingFactor: 0,
-		needPABOOST:     true,
-		nodeAddress:     1,
+		NeedPABOOST:     true,
+		LogLevel:        LogLevel,
+		Logger:          Logger,
 	}
 }
 
@@ -97,6 +98,7 @@ func (c *Chip) readRegister(addr byte) (byte, error) {
 	buf := [2]byte{addr & 0x7F, 0}
 	err := c.dev.Transfer(buf[0:])
 	c.pinSS.Write(High)
+	c.Log(LogLevelDebug, "Reading reg  %X:  %X", addr, buf[1])
 	return buf[1], err
 }
 
@@ -105,19 +107,23 @@ func (c *Chip) writeRegister(addr byte, data byte) error {
 	buf := [2]byte{addr | 0x80, data}
 	err := c.dev.Transfer(buf[0:])
 	c.pinSS.Write(High)
+	c.Log(LogLevelDebug, "Writing reg  %X:  %X", addr, data)
 	return err
 }
 
+// var spiSpeed = 10000000 // 10MHz
+var spiSpeed = 1000000 // 1MHz
+
 func Discover() (*Chip, error) {
 
-	dev, err := spi.Open("/dev/spidev0.1", 1000000)
+	dev, err := spi.Open("/dev/spidev0.1", spiSpeed)
 	if err != nil {
 		return nil, err
 	}
 	dev.SetMode(0)
 	dev.SetBitsPerWord(8)
 	dev.SetLSBFirst(false)
-	dev.SetMaxSpeed(1000000)
+	dev.SetMaxSpeed(spiSpeed)
 
 	// SlaveSelect GPIO Pin
 	pinSS, err := gpio.Output(8)
@@ -126,36 +132,45 @@ func Discover() (*Chip, error) {
 	}
 
 	// Reset GIOP Pin
-	pinRst, err := gpio.Output(4)
+	pinRst, err := gpio.Output(17)
 	if err != nil {
 		return nil, err
 	}
 
 	// SX127X instance
-	sx := New(dev, pinSS, pinRst)
-	sx.Logger = Logger
-	sx.LogLevel = LogLevel
+	c := New(dev, pinSS, pinRst)
 
-	sx.pinSS.Write(High)
+	c.pinSS.Write(High)
 	delay(100)
 
-	sx.pinRst.Write(Low)
+	c.pinRst.Write(Low)
 	delay(100)
-	sx.pinRst.Write(High)
+	c.pinRst.Write(High)
 	delay(100)
 
-	version, err := sx.readRegister(RegVersion)
+	version, err := c.readRegister(RegVersion)
 	if err != nil {
-		sx.Close()
+		c.Close()
 		return nil, err
 	}
-	sx.version = version
+	c.version = version
 	if version != VersionSX1272 && version != VersionSX1276 {
-		sx.Close()
+		c.Close()
 		return nil, fmt.Errorf("unknown chip version: 0x%x", version)
 	}
 
-	return sx, nil
+	// init
+	// c.writeRegister(0x1, 0x81)
+	// c.writeRegister(0x1E, 0xC4)
+	// c.writeRegister(0x26, 0x04)
+
+	c.RxChainCalibration()
+	c.SetMaxCurrent(0x1B)
+	c.SetLORA()
+	c.SetCRC(true)
+	c.SetSyncWord(c.defaultSyncWord)
+
+	return c, nil
 }
 
 func (c *Chip) Name() string {
@@ -168,29 +183,7 @@ func (c *Chip) Name() string {
 	return ""
 }
 
-// On Sets the module ON.
-func (c *Chip) Init() error {
-
-	c.Log(LogLevelDebug, "Starting 'ON'.")
-
-	if err := c.RxChainCalibration(); err != nil {
-		return err
-	}
-	if err := c.SetMaxCurrent(0x1B); err != nil {
-		return err
-	}
-	c.Log(LogLevelVerbose, "Setting ON with maximum current supply.")
-
-	if err := c.SetLORA(); err != nil {
-		return err
-	}
-
-	preambleLength, err := c.GetPreambleLength()
-	if err != nil {
-		return err
-	}
-
-	c.Log(LogLevelVerbose, "Preamble length: %d.", preambleLength)
+func (c *Chip) init() error {
 
 	// CAUTION
 	// doing initialization as proposed by Libelium seems not to work for the SX1276
@@ -316,27 +309,6 @@ func (c *Chip) Init() error {
 	c.writeRegister(0x40, 0x0)
 	c.writeRegister(0x41, 0x0)
 
-	c.SetSyncWord(c.defaultSyncWord)
-
-	/*
-		if err := c.SetMode(1); err != nil {
-			return err
-		}
-		if err := c.SetChannel(CH_10_868); err != nil {
-			return err
-		}
-		if err := c.SetPowerDBM(14); err != nil {
-			return err
-		}
-
-		c.Logger.SetOutput(os.Stdout)
-		c.LogLevel = LogLevelDebug
-		for true {
-		 	data, err := c.ReceiveAll(10000)
-		 	log.Println(data, err)
-		}
-	*/
-
 	return nil
 }
 
@@ -352,7 +324,22 @@ func delay(d int) {
 	time.Sleep((time.Millisecond * time.Duration(d)))
 }
 
+func (c *Chip) setOCP(mA byte) error {
+
+	var ocpTrim byte = 27
+
+	if mA <= 120 {
+		ocpTrim = (mA - 45) / 5
+	} else if mA <= 240 {
+		ocpTrim = (mA + 30) / 10
+	}
+
+	return c.writeRegister(REG_OCP, 0x20|(0x1F&ocpTrim))
+}
+
 func (c *Chip) SetSyncWord(sw byte) (err error) {
+
+	c.Log(LogLevelDebug, "Starting 'SetSyncWord'.")
 
 	st0, _ := c.readRegister(REG_OP_MODE) // Save the previous status
 
@@ -419,41 +406,22 @@ func (c *Chip) GetFreq() uint32 {
 
 func (c *Chip) SetChannel(ch uint32) (err error) {
 
+	c.Log(LogLevelDebug, "Starting 'SetChannel'.")
+
 	st0, _ := c.readRegister(REG_OP_MODE) // Save the previous status
 	if c.mode == ModeLoRa {
 		c.writeRegister(REG_OP_MODE, LORA_STANDBY_MODE)
 	} else {
 		c.writeRegister(REG_OP_MODE, FSK_STANDBY_MODE)
 	}
-	/*
-		if( _modem == LORA )
-		{
-			// LoRa Stdby mode in order to write in registers
-			writeRegister(REG_OP_MODE, LORA_STANDBY_MODE);
-		}
-		else
-		{
-			// FSK Stdby mode in order to write in registers
-			writeRegister(REG_OP_MODE, FSK_STANDBY_MODE);
-		}
-	*/
 
-	frf3 := byte((ch >> 16) & 0x0FF) // frequency channel MSB
-	frf2 := byte((ch >> 8) & 0x0FF)  // frequency channel MIB
-	frf1 := byte(ch & 0xFF)          // frequency channel LSB
+	c.writeRegister(REG_FRF_MSB, byte((ch>>16)&0xFF))
+	c.writeRegister(REG_FRF_MID, byte((ch>>8)&0xFF))
+	c.writeRegister(REG_FRF_LSB, byte(ch&0xFF))
 
-	// storing MSB in freq channel value
-	c.writeRegister(REG_FRF_MSB, frf3)
-	// storing MID in freq channel value
-	c.writeRegister(REG_FRF_MID, frf2)
-	// storing LSB in freq channel value
-	c.writeRegister(REG_FRF_LSB, frf1)
-
-	time.Sleep(100 * time.Millisecond)
-
-	frf3, _ = c.readRegister(REG_FRF_MSB)
-	frf2, _ = c.readRegister(REG_FRF_MID)
-	frf1, _ = c.readRegister(REG_FRF_LSB)
+	frf3, _ := c.readRegister(REG_FRF_MSB)
+	frf2, _ := c.readRegister(REG_FRF_MID)
+	frf1, _ := c.readRegister(REG_FRF_LSB)
 
 	frf := uint32(frf3)<<16 + uint32(frf2)<<8 + uint32(frf1)
 
@@ -464,13 +432,13 @@ func (c *Chip) SetChannel(ch uint32) (err error) {
 		c.Log(LogLevelVerbose, "Channel changed to 0x%06x: %.2f Mhz", ch, float64(freq)/1e6)
 		c.channel = ch
 	}
-
 	c.writeRegister(REG_OP_MODE, st0) // Getting back to previous status
-	time.Sleep(100 * time.Millisecond)
 	return
 }
 
 func (c *Chip) SetMaxCurrent(rate byte) error {
+
+	c.Log(LogLevelDebug, "Starting 'SetMaxCurrent'.")
 
 	// Maximum rate value = 0x1B, because maximum current supply = 240 mA
 	if rate > 0x1B {
@@ -506,16 +474,18 @@ func (c *Chip) GetPreambleLength() (length int, err error) {
 
 func (c *Chip) SetLORA() error {
 
+	c.Log(LogLevelDebug, "Starting 'SetLORA'.")
+
 	// modified by C. Pham
 	retry := 0
 	var st0 byte
 
 	for st0 != LORA_STANDBY_MODE {
-		time.Sleep(time.Millisecond * 200)
+		delay(200)
 		c.writeRegister(REG_OP_MODE, FSK_SLEEP_MODE)  // Sleep mode (mandatory to set LoRa mode)
 		c.writeRegister(REG_OP_MODE, LORA_SLEEP_MODE) // LoRa sleep mode
 		c.writeRegister(REG_OP_MODE, LORA_STANDBY_MODE)
-		time.Sleep(time.Millisecond * time.Duration(50+10*retry))
+		delay(50 + 10*retry)
 		st0, _ = c.readRegister(REG_OP_MODE)
 
 		if (retry % 2) == 0 {
@@ -618,59 +588,61 @@ func (c *Chip) setPacketLength(length byte) (err error) {
 	}
 
 	c.writeRegister(REG_OP_MODE, st0) // Getting back to previous status
-	// comment by C. Pham
-	// this delay is included in the send delay overhead
-	// TODO: do we really need this delay?
-	delay(250)
+	delay(5)
 	return
 }
 
 var ErrIncorrectCRC = fmt.Errorf("incorrect CRC")
 var ErrTimeout = fmt.Errorf("timeout")
 
+var bandwidths = map[uint32]byte{
+	7800:   BW_7_8,
+	10400:  BW_10_4,
+	15600:  BW_15_6,
+	20800:  BW_20_8,
+	31250:  BW_31_25,
+	41700:  BW_41_7,
+	62500:  BW_62_5,
+	125000: BW_125,
+	250000: BW_250,
+	500000: BW_500,
+}
+
+var coderates = map[string]byte{
+	"4/5": CR_5,
+	"4/6": CR_6,
+	"2/3": CR_6,
+	"4/7": CR_7,
+	"4/8": CR_8,
+	"2/4": CR_8,
+	"1/2": CR_8,
+}
+
 func (c *Chip) Receive(cfg *lora.Config) error {
 
-	var bw byte
-	switch cfg.LoRaBW {
-	case 7800:
-		bw = BW_7_8
-	case 10400:
-		bw = BW_10_4
-	case 15600:
-		bw = BW_15_6
-	case 20800:
-		bw = BW_20_8
-	case 31250:
-		bw = BW_31_25
-	case 41700:
-		bw = BW_41_7
-	case 62500:
-		bw = BW_62_5
-	case 125000:
-		bw = BW_125
-	case 250000:
-		bw = BW_250
-	case 500000:
-		bw = BW_500
-	default:
+	bw, ok := bandwidths[cfg.LoRaBW]
+	if !ok {
 		return fmt.Errorf("unknown bandwidth: %d", cfg.LoRaBW)
 	}
+	cr, ok := coderates[cfg.LoRaCR]
+	if !ok {
+		return fmt.Errorf("unknown coderate: %s", cfg.LoRaCR)
+	}
 
-	var cr byte = CR_5
 	sf := cfg.Datarate
 
 	if c.codingRate != cr {
-		if err := c.setCR(cr); err != nil {
+		if err := c.SetCR(cr); err != nil {
 			return err
 		}
 	}
 	if c.spreadingFactor != sf {
-		if err := c.setSF(sf); err != nil {
+		if err := c.SetSF(sf); err != nil {
 			return err
 		}
 	}
 	if c.bandwidth != bw {
-		if err := c.setBW(bw); err != nil {
+		if err := c.SetBW(bw); err != nil {
 			return err
 		}
 	}
@@ -680,15 +652,6 @@ func (c *Chip) Receive(cfg *lora.Config) error {
 	}
 
 	c.SetPowerDBM(14)
-
-	// c.bandwidth = bw
-	// c.spreadingFactor = cfg.Datarate
-	// if err := c.setBW(bw); err != nil {
-	// 	return err
-	// }
-	// if err := c.setSF(cfg.Datarate); err != nil {
-	// 	return err
-	// }
 
 	// from ReceiveAll()
 	if c.mode == ModemFSK { // FSK mode
@@ -846,17 +809,17 @@ func (c *Chip) SetMode(m int) (err error) {
 	}
 	mode := modes[m]
 	if c.codingRate != mode.cr {
-		if err = c.setCR(mode.cr); err != nil {
+		if err = c.SetCR(mode.cr); err != nil {
 			return err
 		}
 	}
 	if c.spreadingFactor != uint32(mode.sf) {
-		if err = c.setSF(uint32(mode.sf)); err != nil {
+		if err = c.SetSF(uint32(mode.sf)); err != nil {
 			return err
 		}
 	}
 	if c.bandwidth != mode.bw {
-		if err = c.setBW(mode.bw); err != nil {
+		if err = c.SetBW(mode.bw); err != nil {
 			return err
 		}
 	}
@@ -947,7 +910,7 @@ func (c *Chip) GetRSSIpacket() (rssi int16, err error) {
 	return
 }
 
-func (c *Chip) setCR(cod byte) (err error) {
+func (c *Chip) SetCR(cod byte) (err error) {
 
 	c.Log(LogLevelDebug, "Starting 'setCR'.")
 
@@ -1053,7 +1016,7 @@ func (c *Chip) setCR(cod byte) (err error) {
 	return
 }
 
-func (c *Chip) setSF(spr uint32) (err error) {
+func (c *Chip) SetSF(spr uint32) (err error) {
 
 	c.Log(LogLevelDebug, "Starting 'setSF'.")
 
@@ -1121,7 +1084,7 @@ func (c *Chip) setSF(spr uint32) (err error) {
 
 			config1 = config1 | 1 // 0B00000001;
 		} else {
-			config3, _ := c.readRegister(REG_MODEM_CONFIG3)
+			config3, _ = c.readRegister(REG_MODEM_CONFIG3)
 			config3 = config3 | 8 // 0B00001000;
 		}
 	} else {
@@ -1129,7 +1092,7 @@ func (c *Chip) setSF(spr uint32) (err error) {
 		if c.version == VersionSX1272 {
 			config1 = config1 & 254 // 0B11111110;
 		} else {
-			config3, _ := c.readRegister(REG_MODEM_CONFIG3)
+			config3, _ = c.readRegister(REG_MODEM_CONFIG3)
 			config3 = config3 & 247 // 0B11110111;
 		}
 	}
@@ -1166,7 +1129,7 @@ func (c *Chip) setSF(spr uint32) (err error) {
 		c.writeRegister(REG_DETECTION_THRESHOLD, 0x0C)
 	} else {
 		// added by C. Pham
-		// c.setHeaderON()
+		c.setHeaderON()
 
 		// LoRa detection Optimize: 0x03 --> SF7 to SF12
 		c.writeRegister(REG_DETECT_OPTIMIZE, 0x03)
@@ -1190,7 +1153,49 @@ func (c *Chip) setSF(spr uint32) (err error) {
 	return
 }
 
-func (c *Chip) setBW(bw byte) (err error) {
+func (c *Chip) SetCRC(on bool) (err error) {
+	c.Log(LogLevelDebug, "Starting 'SetCRC'.")
+
+	if c.mode == ModeLoRa {
+		if c.version == VersionSX1272 {
+			conf1, _ := c.readRegister(REG_MODEM_CONFIG1)
+			conf1 = conf1 | 0x2 // 0B00000010
+			c.writeRegister(REG_MODEM_CONFIG1, conf1)
+			conf1, _ = c.readRegister(REG_MODEM_CONFIG1)
+			if conf1&0x2 != 0 {
+				c.Log(LogLevelVerbose, "CRC has been successfully set.")
+			} else {
+				c.Log(LogLevelError, "There has been an error while setting the CRC.")
+				err = fmt.Errorf("can not set CRC")
+			}
+		} else {
+			conf2, _ := c.readRegister(REG_MODEM_CONFIG2)
+			conf2 = conf2 | 0x4 // 0B00000100
+			c.writeRegister(REG_MODEM_CONFIG2, conf2)
+			conf2, _ = c.readRegister(REG_MODEM_CONFIG2)
+			if conf2&0x4 != 0 {
+				c.Log(LogLevelVerbose, "CRC has been successfully set.")
+			} else {
+				c.Log(LogLevelError, "There has been an error while setting the CRC.")
+				err = fmt.Errorf("can not set CRC")
+			}
+		}
+	} else {
+		conf1, _ := c.readRegister(REG_MODEM_CONFIG1)
+		conf1 = conf1 | 0x10 // 0B00010000
+		c.writeRegister(REG_MODEM_CONFIG1, conf1)
+		conf1, _ = c.readRegister(REG_MODEM_CONFIG1)
+		if conf1&0x10 != 0 {
+			c.Log(LogLevelVerbose, "CRC has been successfully set.")
+		} else {
+			c.Log(LogLevelError, "There has been an error while setting the CRC.")
+			err = fmt.Errorf("can not set CRC")
+		}
+	}
+	return
+}
+
+func (c *Chip) SetBW(bw byte) (err error) {
 	c.Log(LogLevelDebug, "Starting 'setBW'.")
 
 	state := 2
@@ -1409,7 +1414,7 @@ func (c *Chip) SetPowerDBM(power byte) (err error) {
 	var value byte
 
 	if c.version == VersionSX1272 {
-		if c.needPABOOST {
+		if c.NeedPABOOST {
 			value = power - 2
 			// we set the PA_BOOST pin
 			value = value | 128 // 0B10000000;
@@ -1429,7 +1434,7 @@ func (c *Chip) SetPowerDBM(power byte) (err error) {
 		// so x= 14dBm (PA);
 		// when p=='X' for 20dBm, value is 0x0F and RegPaDacReg=0x87 so 20dBm is enabled
 
-		if c.needPABOOST {
+		if c.NeedPABOOST {
 			value = power - 17 + 15
 			// we set the PA_BOOST pin
 			value = value | 128 // 0B10000000;
@@ -1443,7 +1448,7 @@ func (c *Chip) SetPowerDBM(power byte) (err error) {
 		c.writeRegister(REG_PA_CONFIG, value)
 	}
 
-	c.power = power
+	c.power = value
 
 	value, _ = c.readRegister(REG_PA_CONFIG)
 
@@ -1740,54 +1745,36 @@ var errOnlyLora = errors.New("modulation must be \"LORA\"")
 
 func (c *Chip) Send(pkt *lora.TxPacket) (err error) {
 
-	switch pkt.Modulation {
-	case "LORA":
-		if c.mode != ModeLoRa {
-			if err = c.SetLORA(); err != nil {
-				return err
-			}
+	cr := pkt.LoRaCR - 4
+	bw := pkt.LoRaBW - 1
+	sf := pkt.Datarate
+
+	if c.codingRate != cr {
+		if err := c.SetCR(cr); err != nil {
+			return err
 		}
-	default:
-		return fmt.Errorf("unsupported mode: %q", pkt.Modulation)
 	}
-
-	channel := uint32(uint64(pkt.Freq<<19) / 32000000)
-
-	if err := c.SetChannel(channel); err != nil {
+	if c.bandwidth != bw {
+		if err := c.SetBW(bw); err != nil {
+			return err
+		}
+	}
+	if c.spreadingFactor != sf {
+		if err := c.SetSF(sf); err != nil {
+			return err
+		}
+	}
+	if err := c.SetFreq(pkt.Freq); err != nil {
 		return err
 	}
-
-	if c.spreadingFactor != pkt.Datarate {
-		if !c.isSF(pkt.Datarate) {
-			return fmt.Errorf("invalid spreading factor: %v", pkt.Datarate)
-		}
-		if err = c.setSF(pkt.Datarate); err != nil {
-			return err
-		}
-	}
-	var bw = pkt.LoRaBW - 1
-	if c.bandwidth != pkt.LoRaBW {
-		if !c.isBW(bw) {
-			return fmt.Errorf("invalid bandwith: %v", pkt.LoRaBW)
-		}
-		if err = c.setBW(bw); err != nil {
-			return err
-		}
-	}
-	var cr = pkt.LoRaCR - 4
-	if c.codingRate != cr {
-		if !c.isCR(cr) {
-			return fmt.Errorf("invalid coding rate: %v", pkt.LoRaCR)
-		}
-		if err := c.setCR(cr); err != nil {
-			return err
-		}
+	if err := c.SetPowerDBM(pkt.Power); err != nil {
+		return err
 	}
 
 	return c.sendPacketTimeout(pkt.Data, 10000)
 }
 
-func (c *Chip) send(payload []byte) error {
+func (c *Chip) Write(payload []byte) error {
 	//c.setPacketType(PKT_TYPE_DATA | PKT_FLAG_DATA_DOWNLINK)
 	return c.sendPacketTimeout(payload, 10000)
 }
@@ -1797,7 +1784,12 @@ func (c *Chip) sendPacketTimeout(payload []byte, timeout uint16) (err error) {
 	if err != nil {
 		return
 	}
-	return c.sendWithTimeout(timeout)
+	// if err = c.setIQInversion(false); err != nil {
+	// 	return
+	// }
+	err = c.sendWithTimeout(timeout)
+	// c.setIQInversion(true)
+	return
 }
 
 func (c *Chip) setPacket(payload []byte) (err error) {
@@ -1836,13 +1828,50 @@ func (c *Chip) setPacket(payload []byte) (err error) {
 	return
 }
 
+func (c *Chip) SetIQInversion(invert bool) (err error) {
+
+	c.Log(LogLevelDebug, "Starting 'setIQInversion'.")
+
+	st0, _ := c.readRegister(REG_OP_MODE) // Save the previous status
+
+	c.writeRegister(REG_OP_MODE, LORA_STANDBY_MODE) // Set Standby mode to write in registers
+
+	// According to Semtech AN1200.23 Rev.2 June 2015
+	if invert {
+		// c.writeRegister(REG_INVERT_IQ, readRegister(REG_INVERT_IQ)|(1<<6));
+		c.writeRegister(REG_INVERT_IQ, 0x67)
+		c.writeRegister(REG_INVERT_IQ2, 0x19)
+	} else {
+		// c.writeRegister(REG_INVERT_IQ, readRegister(REG_INVERT_IQ) & 0B10111111);
+		c.writeRegister(REG_INVERT_IQ, 0x27)
+		c.writeRegister(REG_INVERT_IQ2, 0x1D)
+	}
+
+	i1, _ := c.readRegister(REG_INVERT_IQ)
+	i2, _ := c.readRegister(REG_INVERT_IQ2)
+
+	if (invert && ((i1 != 0x67) || (i2 != 0x19))) || (!invert && ((i1 != 0x27) || (i2 != 0x1D))) {
+		err = fmt.Errorf("can not change IQ inversion")
+	} else {
+		if invert {
+			c.Log(LogLevelVerbose, "IQ inversion activated")
+		} else {
+			c.Log(LogLevelVerbose, "IQ inversion deactivated")
+		}
+	}
+
+	c.writeRegister(REG_OP_MODE, st0) // Getting back to previous status
+	return
+}
+
 func (c *Chip) sendWithTimeout(wait uint16) (err error) {
 
 	c.Log(LogLevelDebug, "Starting 'sendWithTimeout'.")
 
 	var value byte
 
-	var exitTime = time.Now().Add(time.Millisecond * time.Duration(wait))
+	var startTime = time.Now()
+	var exitTime = startTime.Add(time.Millisecond * time.Duration(wait))
 
 	if c.mode == ModeLoRa { // LoRa mode
 		c.clearFlags() // Initializing flags
@@ -1853,8 +1882,8 @@ func (c *Chip) sendWithTimeout(wait uint16) (err error) {
 		// Wait until the packet is sent (TX Done flag) or the timeout expires
 		//while ((bitRead(value, 3) == 0) && (millis() - previous < wait))
 		for value&Bit3 == 0 && exitTime.After(time.Now()) {
-			value, _ = c.readRegister(REG_IRQ_FLAGS)
 			delay(100)
+			value, _ = c.readRegister(REG_IRQ_FLAGS)
 			// Condition to avoid an overflow (DO NOT REMOVE)
 			//if( millis() < previous )
 			//{
@@ -1868,8 +1897,8 @@ func (c *Chip) sendWithTimeout(wait uint16) (err error) {
 		// Wait until the packet is sent (Packet Sent flag) or the timeout expires
 		//while ((bitRead(value, 3) == 0) && (millis() - previous < wait))
 		for value&Bit3 == 0 && exitTime.After(time.Now()) {
-			value, _ = c.readRegister(REG_IRQ_FLAGS2)
 			delay(100)
+			value, _ = c.readRegister(REG_IRQ_FLAGS2)
 			// Condition to avoid an overflow (DO NOT REMOVE)
 			//if( millis() < previous )
 			//{
@@ -1877,8 +1906,12 @@ func (c *Chip) sendWithTimeout(wait uint16) (err error) {
 			//}
 		}
 	}
+
+	duration := time.Now().Sub(startTime)
+	c.Log(LogLevelNormal, "tx: %s", duration)
+
 	if value&Bit3 != 0 {
-		c.Log(LogLevelVerbose, "Packet successfully sent.")
+		c.Log(LogLevelVerbose, "Packet successfully sent. %s", duration)
 	} else {
 		c.Log(LogLevelError, "Timeout has expired.")
 		err = ErrTimeout
