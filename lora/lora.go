@@ -156,6 +156,13 @@ func (tx *TxPacket) UnmarshalJSON(data []byte) error {
 func (tx *TxPacket) String() string {
 	data := base64.StdEncoding.EncodeToString(tx.Data)
 	if tx.Modulation == "LORA" {
+		versionMajor := tx.Data[0] & 0b11
+		if versionMajor == LoRaWANR1 {
+			mtype := MType(tx.Data[0] >> 5)
+			devAddr := uint32(tx.Data[1])<<24 + uint32(tx.Data[2])<<16 + uint32(tx.Data[3])<<8 + uint32(tx.Data[4])
+			fCnt := uint16(tx.Data[6])<<8 + uint16(tx.Data[7])
+			return fmt.Sprintf("LoRaWAN %s: %.2f MHz, SF%d %s CR4/%d, Mote %08X, FCnt %d, Data: %s", mtype, float64(tx.Freq)/1e6, tx.Datarate, bwStr[tx.LoRaBW], tx.LoRaCR, devAddr, fCnt, data)
+		}
 		return fmt.Sprintf("LoRa: %.2f MHz, SF%d %s CR4/%d, Data: %s", float64(tx.Freq)/1e6, tx.Datarate, bwStr[tx.LoRaBW], tx.LoRaCR, data)
 	}
 	if tx.Modulation == "FSK" {
@@ -237,9 +244,37 @@ func (rx *RxPacket) MarshalJSON() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+const LoRaWANR1 = 0x00
+
+type MType byte
+
+var mTypeStr = []string{
+	"Join Request",
+	"Join Accept",
+	"Unconfirmed Data Up",
+	"Unconfirmed Data Down",
+	"Confirmed Data Up",
+	"Confirmed Data Down",
+	"RFU",
+	"Proprietary",
+}
+
+func (t MType) String() string {
+	return mTypeStr[t]
+}
+
 func (rx *RxPacket) String() string {
 	data := base64.StdEncoding.EncodeToString(rx.Data)
 	if rx.Modulation == "LORA" {
+		if len(rx.Data) > 8 {
+			versionMajor := rx.Data[0] & 0b11
+			if versionMajor == LoRaWANR1 {
+				mtype := MType(rx.Data[0] >> 5)
+				devAddr := uint32(rx.Data[1])<<24 + uint32(rx.Data[2])<<16 + uint32(rx.Data[3])<<8 + uint32(rx.Data[4])
+				fCnt := uint16(rx.Data[6])<<8 + uint16(rx.Data[7])
+				return fmt.Sprintf("LoRaWAN %s: %.2f MHz, SF%d %s CR4/%d, Mote %08X, FCnt %d, Data: %s", mtype, float64(rx.Freq)/1e6, rx.Datarate, bwStr[rx.LoRaBW], rx.LoRaCR, devAddr, fCnt, data)
+			}
+		}
 		return fmt.Sprintf("LoRa: %.2f MHz, SF%d %s CR4/%d, Data: %s", float64(rx.Freq)/1e6, rx.Datarate, bwStr[rx.LoRaBW], rx.LoRaCR, data)
 	}
 	if rx.Modulation == "FSK" {

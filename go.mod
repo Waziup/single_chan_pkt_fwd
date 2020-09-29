@@ -1,6 +1,6 @@
 module github.com/Waziup/single_chan_pkt_fwd
 
-go 1.12
+go 1.13
 
 require (
 	github.com/Waziup/wazigate-rpi/gpio v0.0.0-20191204155719-329ba73795d3

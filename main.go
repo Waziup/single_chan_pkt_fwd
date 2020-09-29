@@ -14,7 +14,6 @@ import (
 	"github.com/Waziup/single_chan_pkt_fwd/SX127X"
 	"github.com/Waziup/single_chan_pkt_fwd/fwd"
 	"github.com/Waziup/single_chan_pkt_fwd/lora"
-	"github.com/Waziup/single_chan_pkt_fwd/tools"
 )
 
 var gwid uint64
@@ -182,6 +181,7 @@ func run(cfg *lora.Config) {
 	radio.Logger = logger.New(os.Stdout, "", 0)
 	radio.LogLevel = logLevel
 
+	var timeReceive = time.Now()
 	time.Sleep(time.Millisecond * 500)
 
 	// for true {
@@ -236,17 +236,17 @@ func run(cfg *lora.Config) {
 			pkt.Power = 14
 			doReceive = false
 
-			diff := baseTime.Add(time.Duration(pkt.CountUs) * time.Microsecond).Sub(time.Now())
-			log(LogLevelNormal, "sending packet in %s", diff)
+			timeSend := baseTime.Add(time.Duration(pkt.CountUs) * time.Microsecond)
+			timeSend.Add(time.Second)
+			diff := timeSend.Sub(time.Now())
+			log(LogLevelNormal, "sending packet in %s, %s since last received", diff, timeSend.Sub(timeReceive))
 			// diff -= 200 * time.Microsecond
 			// time.Sleep(diff)
-			tools.Nanosleep(int32(diff / time.Nanosecond))
+			// tools.Nanosleep(int32(diff / time.Nanosecond))
 			log(LogLevelNormal, "tx: %s", pkt)
-			radio.SetIQInversion(true)
 			if err = radio.Send(pkt); err != nil {
 				log(LogLevelError, "can not send packet: %v", err)
 			}
-			radio.SetIQInversion(false)
 			log(LogLevelNormal, "tx: ok")
 
 			// enqueue packet
@@ -285,6 +285,7 @@ func run(cfg *lora.Config) {
 			if err != nil {
 				fatal("can not receive packets: %v", err)
 			}
+			timeReceive = time.Now()
 			if pkts != nil {
 				doReceive = false
 				for _, pkt := range pkts {

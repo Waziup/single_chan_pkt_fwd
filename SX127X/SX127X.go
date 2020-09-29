@@ -164,11 +164,14 @@ func Discover() (*Chip, error) {
 	// c.writeRegister(0x1E, 0xC4)
 	// c.writeRegister(0x26, 0x04)
 
+	c.writeRegister(REG_INVERT_IQ, 0x26)
+	c.writeRegister(REG_INVERT_IQ2, 0x1D)
 	c.RxChainCalibration()
 	c.SetMaxCurrent(0x1B)
 	c.SetLORA()
 	c.SetCRC(true)
 	c.SetSyncWord(c.defaultSyncWord)
+	// c.SetIQInversion(true)
 
 	return c, nil
 }
@@ -662,6 +665,17 @@ func (c *Chip) Receive(cfg *lora.Config) error {
 	}
 
 	return c.receive()
+}
+
+func (c *Chip) Read() ([]byte, error) {
+	mode, _ := c.readRegister(REG_OP_MODE)
+	if (c.mode == ModeLoRa && mode != LORA_RX_MODE) || (c.mode == ModemFSK && mode != FSK_RX_MODE) {
+		if err := c.receive(); err != nil {
+			return nil, err
+		}
+	}
+	data, _, err := c.getPacket()
+	return data, err
 }
 
 func (c *Chip) GetPacket() ([]*lora.RxPacket, error) {
@@ -1771,7 +1785,19 @@ func (c *Chip) Send(pkt *lora.TxPacket) (err error) {
 		return err
 	}
 
-	return c.sendPacketTimeout(pkt.Data, 10000)
+	if pkt.InvertPolar {
+		if err := c.SetIQInversion(true); err != nil {
+			return err
+		}
+	}
+
+	err = c.sendPacketTimeout(pkt.Data, 10000)
+
+	if pkt.InvertPolar {
+		c.SetIQInversion(false)
+	}
+
+	return err
 }
 
 func (c *Chip) Write(payload []byte) error {
@@ -1839,18 +1865,20 @@ func (c *Chip) SetIQInversion(invert bool) (err error) {
 	// According to Semtech AN1200.23 Rev.2 June 2015
 	if invert {
 		// c.writeRegister(REG_INVERT_IQ, readRegister(REG_INVERT_IQ)|(1<<6));
-		c.writeRegister(REG_INVERT_IQ, 0x67)
+		c.writeRegister(REG_INVERT_IQ, 0x66)
+		// c.writeRegister(REG_INVERT_IQ, 0x67)
 		c.writeRegister(REG_INVERT_IQ2, 0x19)
 	} else {
 		// c.writeRegister(REG_INVERT_IQ, readRegister(REG_INVERT_IQ) & 0B10111111);
 		c.writeRegister(REG_INVERT_IQ, 0x27)
+		// c.writeRegister(REG_INVERT_IQ, 0x27)
 		c.writeRegister(REG_INVERT_IQ2, 0x1D)
 	}
 
 	i1, _ := c.readRegister(REG_INVERT_IQ)
 	i2, _ := c.readRegister(REG_INVERT_IQ2)
 
-	if (invert && ((i1 != 0x67) || (i2 != 0x19))) || (!invert && ((i1 != 0x27) || (i2 != 0x1D))) {
+	if (invert && ((i1 != 0x66) || (i2 != 0x19))) || (!invert && ((i1 != 0x26) || (i2 != 0x1D))) {
 		err = fmt.Errorf("can not change IQ inversion")
 	} else {
 		if invert {
