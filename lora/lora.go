@@ -227,7 +227,7 @@ func (rx *RxPacket) MarshalJSON() ([]byte, error) {
 	}
 	fmt.Fprintf(&buf, ",\"chan\":%d", rx.ChainIF)
 	fmt.Fprintf(&buf, ",\"rfch\":%d", rx.ChainRF)
-	fmt.Fprintf(&buf, ",\"freq\":%.6f", float64(rx.Freq)/1e6)
+	fmt.Fprintf(&buf, ",\"freq\":%.3f", float64(rx.Freq)/1e6)
 	fmt.Fprintf(&buf, ",\"stat\":%d", rx.StatCRC)
 	if rx.Modulation == "LORA" {
 		fmt.Fprint(&buf, ",\"modu\":\"LORA\"")
