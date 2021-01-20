@@ -1,8 +1,8 @@
-github.com/Waziup/wazigate-rpi/gpio v0.0.0-20191204155719-329ba73795d3 h1:pNK/k8YsJ7BBUw5RpEeuy4HBiNfVs2gnhUQUtK3yTiA=
-github.com/Waziup/wazigate-rpi/gpio v0.0.0-20191204155719-329ba73795d3/go.mod h1:uudwRClQumLa0Upn0MHp/wiRur6/OU4WgGMMxoUS7tc=
-github.com/Waziup/wazigate-rpi/spi v0.0.0-20191204155719-329ba73795d3 h1:ODHrbE8L9aqVXfnBFIMUOY10mt6Inbf9f5RZHlQTaAc=
-github.com/Waziup/wazigate-rpi/spi v0.0.0-20191204155719-329ba73795d3/go.mod h1:ixDNA9Hdy0DZuf61WGW8O1nIxEOUw+hKVvpyfvY8SJI=
-golang.org/x/sys v0.0.0-20191110163157-d32e6e3b99c4 h1:Hynbrlo6LbYI3H1IqXpkVDOcX/3HiPdhVEuyj5a59RM=
-golang.org/x/sys v0.0.0-20191110163157-d32e6e3b99c4/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
-golang.org/x/sys v0.0.0-20200202164722-d101bd2416d5 h1:LfCXLvNmTYH9kEmVgqbnsWfruoXZIrh4YBgqVHtDvw0=
-golang.org/x/sys v0.0.0-20200202164722-d101bd2416d5/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
+golang.org/x/sys v0.0.0-20210119212857-b64e53b001e4 h1:myAQVi0cGEoqQVR5POX+8RR2mrocKqNN1hmeMqhX27k=
+golang.org/x/sys v0.0.0-20210119212857-b64e53b001e4/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
+periph.io/x/conn/v3 v3.6.7 h1:hem/gzoUI0tnvdJOJAk+XLBhqBGX9sHkwShBXRGGy0k=
+periph.io/x/conn/v3 v3.6.7/go.mod h1:3OD27w9YVa5DS97VsUxsPGzD9Qrm5Ny7cF5b6xMMIWg=
+periph.io/x/host/v3 v3.6.7 h1:hUVkGKJ235XocQIRiITxSmP8TT8f27oiN7R2dJkomIE=
+periph.io/x/host/v3 v3.6.7/go.mod h1:wO+N7Q6qU1Pp9EXBfyV9t7kPAlvZxYoJl4ptK62qhSY=
+periph.io/x/periph v3.6.7+incompatible h1:ZfRdHbcxVekgSJZmxp3873YpxNdWs6wg7waDCF7GB18=
+periph.io/x/periph v3.6.7+incompatible/go.mod h1:EWr+FCIU2dBWz5/wSWeiIUJTriYv9v2j2ENBmgYyy7Y=

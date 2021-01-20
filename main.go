@@ -14,6 +14,9 @@ import (
 	"github.com/Waziup/single_chan_pkt_fwd/SX127X"
 	"github.com/Waziup/single_chan_pkt_fwd/fwd"
 	"github.com/Waziup/single_chan_pkt_fwd/lora"
+
+	"periph.io/x/host/v3"
+	_ "periph.io/x/periph/host/rpi"
 )
 
 var gwid uint64
@@ -58,6 +61,7 @@ func log(level int, format string, v ...interface{}) {
 }
 
 func main() {
+	host.Init()
 
 	logger.SetFlags(0)
 

@@ -8,8 +8,15 @@ import (
 	"time"
 
 	"github.com/Waziup/single_chan_pkt_fwd/lora"
-	"github.com/Waziup/wazigate-rpi/gpio"
-	"github.com/Waziup/wazigate-rpi/spi"
+	// "github.com/Waziup/wazigate-rpi/gpio"
+	// "github.com/Waziup/wazigate-rpi/spi"
+
+	"periph.io/x/conn/v3/gpio"
+	"periph.io/x/conn/v3/gpio/gpioreg"
+
+	"periph.io/x/conn/v3/physic"
+	"periph.io/x/conn/v3/spi"
+	"periph.io/x/conn/v3/spi/spireg"
 )
 
 const (
@@ -34,9 +41,9 @@ const LogLevelWarning = 2
 const LogLevelError = 1
 
 type Chip struct {
-	pinSS           gpio.Pin
-	pinRst          gpio.Pin
-	dev             *spi.Device
+	// pinSS           gpio.Pin
+	pinRst          gpio.PinIO
+	dev             spi.Conn
 	version         byte
 	defaultSyncWord byte
 
@@ -74,10 +81,10 @@ const (
 	PublicSyncWord  = 0x34
 )
 
-func New(dev *spi.Device, pinSS gpio.Pin, pinRst gpio.Pin) *Chip {
+func New(dev spi.Conn, pinRst gpio.PinIO) *Chip {
 	return &Chip{
-		dev:             dev,
-		pinSS:           pinSS,
+		dev: dev,
+		// pinSS:           pinSS,
 		pinRst:          pinRst,
 		defaultSyncWord: PublicSyncWord,
 		spreadingFactor: 0,
@@ -94,20 +101,22 @@ func (c *Chip) Log(level int, format string, v ...interface{}) {
 }
 
 func (c *Chip) readRegister(addr byte) (byte, error) {
-	c.pinSS.Write(Low)
-	buf := [2]byte{addr & 0x7F, 0}
-	err := c.dev.Transfer(buf[0:])
-	c.pinSS.Write(High)
-	c.Log(LogLevelDebug, "Reading reg  %X:  %X", addr, buf[1])
-	return buf[1], err
+	// c.pinSS.Write(Low)
+	in := [2]byte{addr & 0x7F, 0}
+	out := [2]byte{}
+	err := c.dev.Tx(in[0:], out[0:])
+	// c.pinSS.Write(High)
+	c.Log(LogLevelDebug, "Reading reg  %X:  %X", addr, out[1])
+	return out[1], err
 }
 
 func (c *Chip) writeRegister(addr byte, data byte) error {
-	c.pinSS.Write(Low)
-	buf := [2]byte{addr | 0x80, data}
-	err := c.dev.Transfer(buf[0:])
-	c.pinSS.Write(High)
-	c.Log(LogLevelDebug, "Writing reg  %X:  %X", addr, data)
+	// c.pinSS.Write(Low)
+	in := [2]byte{addr | 0x80, data}
+	out := [2]byte{}
+	err := c.dev.Tx(in[0:], out[0:])
+	// c.pinSS.Write(High)
+	c.Log(LogLevelDebug, "Writing reg  %X:  %X", addr, out[1])
 	return err
 }
 
@@ -116,37 +125,63 @@ var spiSpeed = 1000000 // 1MHz
 
 func Discover() (*Chip, error) {
 
-	dev, err := spi.Open("/dev/spidev0.1", spiSpeed)
+	// dev, err := spi.Open("/dev/spidev0.1", spiSpeed)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// dev.SetMode(0)
+	// dev.SetBitsPerWord(8)
+	// dev.SetLSBFirst(false)
+	// dev.SetMaxSpeed(spiSpeed)
+
+	p, err := spireg.Open("/dev/spidev0.0")
 	if err != nil {
 		return nil, err
 	}
-	dev.SetMode(0)
-	dev.SetBitsPerWord(8)
-	dev.SetLSBFirst(false)
-	dev.SetMaxSpeed(spiSpeed)
+
+	conn, err := p.Connect(physic.MegaHertz, spi.Mode0, 8)
+	if err != nil {
+		return nil, err
+	}
+
+	pinRST := gpioreg.ByName("GPIO6")
+
+	// pinSS := gpioreg.ByName("GPIO8")
+	// if err := pinSS.Out(gpio.High); err != nil {
+	// 	return nil, err
+	// }
 
 	// SlaveSelect GPIO Pin
-	pinSS, err := gpio.Output(8)
-	if err != nil {
+	// pinSS, err := gpio.Output(8)
+	// if err != nil {
+	// 	return nil, err
+	// }
+
+	if err := pinRST.Out(gpio.Low); err != nil {
 		return nil, err
 	}
+	delay(100)
+	if err := pinRST.Out(gpio.High); err != nil {
+		return nil, err
+	}
+	delay(100)
 
 	// Reset GIOP Pin
-	pinRst, err := gpio.Output(17)
-	if err != nil {
-		return nil, err
-	}
+	// pinRst, err := gpio.Output(17)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
 	// SX127X instance
-	c := New(dev, pinSS, pinRst)
+	c := New(conn, pinRST)
 
-	c.pinSS.Write(High)
-	delay(100)
+	// c.pinSS.Write(High)
+	// delay(100)
 
-	c.pinRst.Write(Low)
-	delay(100)
-	c.pinRst.Write(High)
-	delay(100)
+	// c.pinRst.Write(Low)
+	// delay(100)
+	// c.pinRst.Write(High)
+	// delay(100)
 
 	version, err := c.readRegister(RegVersion)
 	if err != nil {
@@ -316,10 +351,10 @@ func (c *Chip) init() error {
 }
 
 func (c *Chip) Close() error {
-	c.dev.Close()
-	c.pinSS.Write(Low)
-	c.pinSS.Unexport()
-	c.pinRst.Unexport()
+	// c.dev.Close()
+	// c.pinSS.Write(Low)
+	// c.pinSS.Unexport()
+	// c.pinRst.Unexport()
 	return nil
 }
 
