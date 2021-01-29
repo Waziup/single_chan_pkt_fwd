@@ -144,7 +144,7 @@ func Discover() (*Chip, error) {
 		return nil, err
 	}
 
-	pinRST := gpioreg.ByName("GPIO8")
+	pinRST := gpioreg.ByName("GPIO17")
 
 	if err := pinRST.Out(gpio.Low); err != nil {
 		return nil, err
