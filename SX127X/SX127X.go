@@ -144,18 +144,7 @@ func Discover() (*Chip, error) {
 		return nil, err
 	}
 
-	pinRST := gpioreg.ByName("GPIO6")
-
-	// pinSS := gpioreg.ByName("GPIO8")
-	// if err := pinSS.Out(gpio.High); err != nil {
-	// 	return nil, err
-	// }
-
-	// SlaveSelect GPIO Pin
-	// pinSS, err := gpio.Output(8)
-	// if err != nil {
-	// 	return nil, err
-	// }
+	pinRST := gpioreg.ByName("GPIO8")
 
 	if err := pinRST.Out(gpio.Low); err != nil {
 		return nil, err
