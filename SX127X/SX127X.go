@@ -193,7 +193,13 @@ func Discover(cfg *lora.Config) (*Chip, error) {
 	c.SetMaxCurrent(0x1B)
 	c.SetLORA()
 	c.SetCRC(true)
-	c.SetSyncWord(c.defaultSyncWord)
+	if cfg.Lorawan_public {
+		c.Log(LogLevelDebug, "Set PublicSyncWord 0x%x", PublicSyncWord)
+		c.SetSyncWord(PublicSyncWord)
+	} else{
+		c.Log(LogLevelDebug, "Set PublicSyncWord 0x%x", PrivateSyncWord)
+		c.SetSyncWord(PrivateSyncWord)
+	}
 	// c.SetIQInversion(true)
 
 	return c, nil

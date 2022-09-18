@@ -284,6 +284,9 @@ func (rx *RxPacket) String() string {
 }
 
 type Config struct {
+
+	Lorawan_public bool `json:"lorawan_public"`
+
 	Freq uint32 `json:"freq"` // RX central frequency in Hz
 
 	Modulation string `json:"modulation"` // Modulation identifier "LORA" or "FSK"

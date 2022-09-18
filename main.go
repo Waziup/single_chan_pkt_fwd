@@ -174,7 +174,6 @@ var checkReceived = time.Millisecond * 500
 var tickerKeepalive = time.NewTicker(time.Second * 60)
 
 func run(cfg *lora.Config) {
-	log(LogLevelNormal, "Radio configuration: ", cfg)
 	radio, err := SX127X.Discover(cfg)
 	if err != nil {
 		fatal("can not activate radio: %v", err)
