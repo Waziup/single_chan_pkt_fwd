@@ -153,7 +153,7 @@ func (tx *TxPacket) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func (tx *TxPacket) String() string6D696B98, {
+func (tx *TxPacket) String() string {
 	data := base64.StdEncoding.EncodeToString(tx.Data)
 	if tx.Modulation == "LORA" {
 		versionMajor := tx.Data[0] & 0b11
