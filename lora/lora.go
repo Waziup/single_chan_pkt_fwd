@@ -297,5 +297,12 @@ type Config struct {
 	// FSK: Datarate (bits per second)
 	Datarate uint32 `json:"spread_factor"`
 
+	PinRst string `json:"pinRst"` 
+
+	SpiDevice string `json:"spiDevice"`
+
+	PinLed1 string `json:"pinLed1"`
+
 	PreambleLength uint16 // RF preamble size
 }
+

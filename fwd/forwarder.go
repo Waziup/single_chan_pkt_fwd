@@ -10,7 +10,31 @@ import (
 	"github.com/Waziup/single_chan_pkt_fwd/lora"
 )
 
+/*
+{"stat":{
+	"time":"2014-01-12 08:59:28 GMT",
+	"lati":46.24000,
+	"long":3.25230,
+	"alti":145,
+	"rxnb":2,
+	"rxok":2,
+	"rxfw":2,
+	"ackr":100.0,
+	"dwnb":2,
+	"txnb":2
+}}
+*/
 type Stat struct {
+	TimeStamp string `json:"time"`
+	Latitude float64 `json:"lati"`
+	Longitude float64 `json:"long"`
+	Altitude float64 `json:"alti"`
+	Rxnb int64	    `json:"rxnb"`
+	Rxok int64	`json:"rxok"`
+	Rxfw int64 `json:"rxok"`
+	Ackr int64 `json:"ackr"`
+	Dwnb int64 `json:"dwnb"`
+	Txnb int64 `json:"txnb"`
 }
 
 type TxAckError int

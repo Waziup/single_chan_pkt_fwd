@@ -174,8 +174,8 @@ var checkReceived = time.Millisecond * 500
 var tickerKeepalive = time.NewTicker(time.Second * 60)
 
 func run(cfg *lora.Config) {
-
-	radio, err := SX127X.Discover()
+	log(LogLevelNormal, "Radio configuration: ", cfg)
+	radio, err := SX127X.Discover(cfg)
 	if err != nil {
 		fatal("can not activate radio: %v", err)
 	}
@@ -199,7 +199,7 @@ func run(cfg *lora.Config) {
 	// 		Data:       []byte("Hello World :D"),
 	// 	}
 	// 	log(0, "tx: %s", pkt)
-	// 	if err = radio.Send(pkt); err != nil {
+	// 	if err = radio.Send(pkt); err != nil { 
 	// 		log(LogLevelError, "can not send packet: %v", err)
 	// 	}
 	// 	log(0, "tx: ok")
