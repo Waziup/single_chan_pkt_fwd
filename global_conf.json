@@ -1,9 +1,6 @@
 {
     "SX127X_conf": {
         "lorawan_public": true,
-        "antenna_gain": 0,
-        "antenna_gain_desc": "antenna gain, in dBi",
-        "desc": "IstarGateWay, 125kHz, SF7, 868.1 MHz",
         "bandwidth": 125000,
         "spread_factor": 7,
         "freq": 868100000,
@@ -13,6 +10,13 @@
     },
     "gateway_conf": {
         "gateway_ID": "DCA632FFFFFC8F11",
+        "antenna_gain": 0,
+        "antenna_gain_desc": "antenna gain, in dBi",
+        "desc": "IstarGateWay, 125kHz, SF7, 868.1 MHz",
+        "lati": 0.0,
+        "long": 0.0,
+        "alti": 0,
+        "keepalive_interval": 30,
         "servers": [{
             "server_address": "192.168.0.120",
             "serv_port_up": 1680,

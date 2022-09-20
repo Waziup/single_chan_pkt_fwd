@@ -30,6 +30,12 @@ var laddr = &net.UDPAddr{
 	IP:   net.ParseIP("0.0.0.0"),
 }
 
+var never = time.Duration(math.MaxInt64)
+
+var checkReceived = time.Millisecond * 500
+
+var tickerKeepalive = time.NewTicker(time.Second * 60)
+
 var socket *net.UDPConn
 
 const LogLevelNone = 0
@@ -111,7 +117,13 @@ func main() {
 	if globalConfig.SX127XConf.LoRaCR == "" {
 		globalConfig.SX127XConf.LoRaCR = "4/5" //CR 4/5
 	}
-
+	if globalConfig.GatewayConfig.KeepaliveInterval != 0 {
+		tickerKeepalive = time.NewTicker(time.Second * time.Duration(globalConfig.GatewayConfig.KeepaliveInterval))
+		log(LogLevelVerbose, "using %d gateway keepaliveInterval", globalConfig.GatewayConfig.KeepaliveInterval)
+	}else{
+		log(LogLevelVerbose, "using %d gateway keepaliveInterval", 60)
+		tickerKeepalive = time.NewTicker(time.Second * time.Duration(60))
+	}
 	log(LogLevelVerbose, "using %d servers for upstream", len(globalConfig.GatewayConfig.Servers))
 
 	servers = make([]*net.UDPAddr, 0, len(globalConfig.GatewayConfig.Servers))
@@ -166,12 +178,6 @@ func main() {
 }
 
 var baseTime = time.Now()
-
-var never = time.Duration(math.MaxInt64)
-
-var checkReceived = time.Millisecond * 500
-
-var tickerKeepalive = time.NewTicker(time.Second * 60)
 
 func run(cfg *lora.Config) {
 	radio, err := SX127X.Discover(cfg)
