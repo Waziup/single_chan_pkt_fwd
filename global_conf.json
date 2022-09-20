@@ -14,7 +14,7 @@
     "gateway_conf": {
         "gateway_ID": "DCA632FFFFFC8F11",
         "servers": [{
-            "server_address": "lorawan.silvergeko.it",
+            "server_address": "192.168.0.120",
             "serv_port_up": 1680,
             "serv_port_down": 1680,
             "serv_enabled": true
