@@ -270,8 +270,8 @@ func (rx *RxPacket) String() string {
 			versionMajor := rx.Data[0] & 0b11
 			if versionMajor == LoRaWANR1 {
 				mtype := MType(rx.Data[0] >> 5)
-				devAddr := uint32(rx.Data[1])<<24 + uint32(rx.Data[2])<<16 + uint32(rx.Data[3])<<8 + uint32(rx.Data[4])
-				fCnt := uint16(rx.Data[6])<<8 + uint16(rx.Data[7])
+				devAddr := uint32(rx.Data[4])<<24 + uint32(rx.Data[3])<<16 + uint32(rx.Data[2])<<8 + uint32(rx.Data[1])
+				fCnt := uint16(rx.Data[7])<<8 + uint16(rx.Data[6])
 				return fmt.Sprintf("LoRaWAN %s: %.2f MHz, SF%d %s CR4/%d, Mote %08X, FCnt %d, Data: %s", mtype, float64(rx.Freq)/1e6, rx.Datarate, bwStr[rx.LoRaBW], rx.LoRaCR, devAddr, fCnt, data)
 			}
 		}
@@ -284,6 +284,9 @@ func (rx *RxPacket) String() string {
 }
 
 type Config struct {
+
+	Lorawan_public bool `json:"lorawan_public"`
+
 	Freq uint32 `json:"freq"` // RX central frequency in Hz
 
 	Modulation string `json:"modulation"` // Modulation identifier "LORA" or "FSK"
@@ -297,5 +300,12 @@ type Config struct {
 	// FSK: Datarate (bits per second)
 	Datarate uint32 `json:"spread_factor"`
 
+	PinRst string `json:"pinRst"` 
+
+	SpiDevice string `json:"spiDevice"`
+
+	PinLed1 string `json:"pinLed1"`
+
 	PreambleLength uint16 // RF preamble size
 }
+

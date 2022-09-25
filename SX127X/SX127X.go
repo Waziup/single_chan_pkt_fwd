@@ -121,30 +121,29 @@ func (c *Chip) writeRegister(addr byte, data byte) error {
 }
 
 // var spiSpeed = 10000000 // 10MHz
-var spiSpeed = 1000000 // 1MHz
+//var spiSpeed = 1000000 // 1MHz
 
-func Discover() (*Chip, error) {
+func Discover(cfg *lora.Config) (*Chip, error) {
 
 	// dev, err := spi.Open("/dev/spidev0.1", spiSpeed)
 	// if err != nil {
 	// 	return nil, err
-	// }
+	// }spireg
 	// dev.SetMode(0)
 	// dev.SetBitsPerWord(8)
 	// dev.SetLSBFirst(false)
 	// dev.SetMaxSpeed(spiSpeed)
 
-	p, err := spireg.Open("/dev/spidev0.0")
+	p, err := spireg.Open(cfg.SpiDevice)
 	if err != nil {
 		return nil, err
 	}
-
+	// p.SetMaxSpeed(cfg.SpiSpeedHz)
 	conn, err := p.Connect(physic.MegaHertz, spi.Mode0, 8)
 	if err != nil {
 		return nil, err
 	}
-
-	pinRST := gpioreg.ByName("GPIO17")
+	pinRST := gpioreg.ByName(cfg.PinRst)
 
 	if err := pinRST.Out(gpio.Low); err != nil {
 		return nil, err
@@ -194,7 +193,13 @@ func Discover() (*Chip, error) {
 	c.SetMaxCurrent(0x1B)
 	c.SetLORA()
 	c.SetCRC(true)
-	c.SetSyncWord(c.defaultSyncWord)
+	if cfg.Lorawan_public {
+		c.Log(LogLevelDebug, "Set PublicSyncWord 0x%x", PublicSyncWord)
+		c.SetSyncWord(PublicSyncWord)
+	} else{
+		c.Log(LogLevelDebug, "Set PublicSyncWord 0x%x", PrivateSyncWord)
+		c.SetSyncWord(PrivateSyncWord)
+	}
 	// c.SetIQInversion(true)
 
 	return c, nil

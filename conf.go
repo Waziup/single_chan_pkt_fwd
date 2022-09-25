@@ -11,6 +11,13 @@ type GlobalConfig struct {
 // GatewayConfig ha sht egateway ID and lists servers that we connect to.
 type GatewayConfig struct {
 	GatewayID string `json:"gateway_ID"`
+	StatusReportInterval int `json:"statusReport_interval"`
+	KeepaliveInterval int `json:"keepalive_interval"`
+	Longitude float64 `json:"long"`
+	Latitude float64 `json:"lati"`
+	Altitude int64 `json:"alti"`
+	Description string `json:"desc"`
+	Mail string `json:"mail"`
 	Servers   []struct {
 		Address  string `json:"server_address"`
 		PortUp   int    `json:"serv_port_up"`
