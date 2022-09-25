@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/Waziup/single_chan_pkt_fwd/lora"
 )
@@ -22,19 +23,25 @@ import (
 	"ackr":100.0,
 	"dwnb":2,
 	"txnb":2
+	"pfrm":"LG01/OLG01",
+	"mail":"info@silvergeko.it",
+	"desc":"DESC"
 }}
 */
-type Stat struct {
-	TimeStamp string `json:"time"`
+type Statistic struct {
+	TimeStamp time.Time  `json:"time"`
 	Latitude float64 `json:"lati"`
 	Longitude float64 `json:"long"`
-	Altitude float64 `json:"alti"`
+	Altitude int64 `json:"alti"`
 	Rxnb int64	    `json:"rxnb"`
 	Rxok int64	`json:"rxok"`
 	Rxfw int64 `json:"rxok"`
 	Ackr int64 `json:"ackr"`
 	Dwnb int64 `json:"dwnb"`
 	Txnb int64 `json:"txnb"`
+	Pfrm string `json:"pfrm"`
+	Mail string `json:"mail"`
+	Desc string `json:"desc"`
 }
 
 type TxAckError int
@@ -96,7 +103,7 @@ type Packet struct {
 	Token     Token            `json:"-"`
 	Ident     Ident            `json:"-"`
 	GatewayID uint64           `json:"-"`
-	Stat      *Stat            `json:"stat,omitempty"`
+	Stat      *Statistic            `json:"stat,omitempty"`
 	RxPackets []*lora.RxPacket `json:"rxpk,omitempty"`
 	TxPacket  *lora.TxPacket   `json:"txpk,omitempty"`
 	TxAck     TxAckError       `json:"txpk_ack,omitempty"`

@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io/ioutil"
 	logger "log"
 	"math"
@@ -22,6 +23,7 @@ import (
 var gwid uint64
 
 var tx = make(chan *lora.TxPacket)
+var stat = new(fwd.Statistic)
 
 var servers []*net.UDPAddr
 
@@ -35,6 +37,7 @@ var never = time.Duration(math.MaxInt64)
 var checkReceived = time.Millisecond * 500
 
 var tickerKeepalive = time.NewTicker(time.Second * 60)
+var tickerStatusReport = time.NewTicker(time.Second * 240)
 
 var socket *net.UDPConn
 
@@ -61,8 +64,9 @@ func fatal(format string, v ...interface{}) {
 }
 
 func log(level int, format string, v ...interface{}) {
+	timestamp := time.Now().UTC().Format(time.RFC822)
 	if level <= logLevel && level >= -1 && level < 6 {
-		logger.Printf(logLevelStr[level]+format, v...)
+		logger.Printf(logLevelStr[level]+ "||" + timestamp + "|| "+format, v...)
 	}
 }
 
@@ -119,11 +123,19 @@ func main() {
 	}
 	if globalConfig.GatewayConfig.KeepaliveInterval != 0 {
 		tickerKeepalive = time.NewTicker(time.Second * time.Duration(globalConfig.GatewayConfig.KeepaliveInterval))
-		log(LogLevelVerbose, "using %d gateway keepaliveInterval", globalConfig.GatewayConfig.KeepaliveInterval)
+		log(LogLevelVerbose, "using %d seconds gateway keepaliveInterval", globalConfig.GatewayConfig.KeepaliveInterval)
 	}else{
-		log(LogLevelVerbose, "using %d gateway keepaliveInterval", 60)
+		log(LogLevelVerbose, "using %d seconds gateway keepaliveInterval", 60)
 		tickerKeepalive = time.NewTicker(time.Second * time.Duration(60))
 	}
+	if globalConfig.GatewayConfig.StatusReportInterval != 0 {
+		log(LogLevelVerbose, "using %d seconds gateway StatusReportInterval", globalConfig.GatewayConfig.StatusReportInterval)
+		tickerStatusReport = time.NewTicker(time.Second * time.Duration(globalConfig.GatewayConfig.StatusReportInterval))
+	}else{
+		log(LogLevelVerbose, "using %d seconds gateway StatusReportInterval", 240)
+		tickerStatusReport = time.NewTicker(time.Second * time.Duration(240))
+	}
+
 	log(LogLevelVerbose, "using %d servers for upstream", len(globalConfig.GatewayConfig.Servers))
 
 	servers = make([]*net.UDPAddr, 0, len(globalConfig.GatewayConfig.Servers))
@@ -174,12 +186,12 @@ func main() {
 	})
 
 	go downstream()
-	run(globalConfig.SX127XConf)
+	run(globalConfig.SX127XConf, globalConfig.GatewayConfig)
 }
 
 var baseTime = time.Now()
 
-func run(cfg *lora.Config) {
+func run(cfg *lora.Config, g_cfg *GatewayConfig) {
 	radio, err := SX127X.Discover(cfg)
 	if err != nil {
 		fatal("can not activate radio: %v", err)
@@ -213,6 +225,11 @@ func run(cfg *lora.Config) {
 
 	doReceive := false
 	timerSend := time.NewTimer(never)
+	stat.Desc =  g_cfg.Description
+	stat.Mail = g_cfg.Mail
+	stat.Latitude = g_cfg.Latitude
+	stat.Longitude = g_cfg.Longitude
+	stat.Altitude = g_cfg.Altitude
 
 	for true {
 
@@ -226,124 +243,140 @@ func run(cfg *lora.Config) {
 		}
 
 		timerReceive := time.NewTimer(checkReceived)
+		
 
+		
 		select {
-		case pkt := <-chanTx:
+			case pkt := <-chanTx:
 
-			log(LogLevelNormal, "received packet from upstream")
+				log(LogLevelNormal, "received packet from upstream")
 
-			if pkt.Immediate {
-				log(LogLevelNormal, "sending immediate packet ...")
+				if pkt.Immediate {
+					log(LogLevelNormal, "sending immediate packet ...")
+					doReceive = false
+					if err = radio.Send(pkt); err != nil {
+						log(LogLevelError, "can not send packet: %v", err)
+					}
+					stat.Dwnb += 1
+					continue
+				}
+
+				pkt.Power = 14
 				doReceive = false
+
+				timeSend := baseTime.Add(time.Duration(pkt.CountUs) * time.Microsecond)
+				timeSend.Add(time.Second)
+				diff := timeSend.Sub(time.Now())
+				log(LogLevelNormal, "sending packet in %s, %s since last received", diff, timeSend.Sub(timeReceive))
+				// diff -= 200 * time.Microsecond
+				// time.Sleep(diff)
+				// tools.Nanosleep(int32(diff / time.Nanosecond))
+				log(LogLevelNormal, "tx: %s", pkt)
 				if err = radio.Send(pkt); err != nil {
 					log(LogLevelError, "can not send packet: %v", err)
 				}
+				log(LogLevelNormal, "tx: ok")
 
-				continue
-			}
+				// enqueue packet
+				// if queue == nil {
+				// 	queue = &Queue{pkt: pkt}
+				// } else {
+				// 	if queue.pkt.CountUs > pkt.CountUs {
+				// 		queue = &Queue{
+				// 			next: queue,
+				// 			pkt:  pkt,
+				// 		}
+				// 	} else {
+				// 		for q := queue; ; q = q.next {
+				// 			if q.next == nil {
+				// 				q.next = &Queue{pkt: pkt}
+				// 				break
+				// 			}
+				// 			if q.next.pkt.CountUs > pkt.CountUs {
+				// 				q.next = &Queue{
+				// 					next: q.next,
+				// 					pkt:  pkt,
+				// 				}
+				// 				break
+				// 			}
+				// 		}
+				// 	}
+				// }
+				// queueSize++
 
-			pkt.Power = 14
-			doReceive = false
+				// diff = 0 * time.Millisecond
+				// log(LogLevelNormal, "tx queue: %d packets, next packet in %s", queueSize, diff)
+				// timerSend.Reset(diff)
 
-			timeSend := baseTime.Add(time.Duration(pkt.CountUs) * time.Microsecond)
-			timeSend.Add(time.Second)
-			diff := timeSend.Sub(time.Now())
-			log(LogLevelNormal, "sending packet in %s, %s since last received", diff, timeSend.Sub(timeReceive))
-			// diff -= 200 * time.Microsecond
-			// time.Sleep(diff)
-			// tools.Nanosleep(int32(diff / time.Nanosecond))
-			log(LogLevelNormal, "tx: %s", pkt)
-			if err = radio.Send(pkt); err != nil {
-				log(LogLevelError, "can not send packet: %v", err)
-			}
-			log(LogLevelNormal, "tx: ok")
-
-			// enqueue packet
-			// if queue == nil {
-			// 	queue = &Queue{pkt: pkt}
-			// } else {
-			// 	if queue.pkt.CountUs > pkt.CountUs {
-			// 		queue = &Queue{
-			// 			next: queue,
-			// 			pkt:  pkt,
-			// 		}
-			// 	} else {
-			// 		for q := queue; ; q = q.next {
-			// 			if q.next == nil {
-			// 				q.next = &Queue{pkt: pkt}
-			// 				break
-			// 			}
-			// 			if q.next.pkt.CountUs > pkt.CountUs {
-			// 				q.next = &Queue{
-			// 					next: q.next,
-			// 					pkt:  pkt,
-			// 				}
-			// 				break
-			// 			}
-			// 		}
-			// 	}
-			// }
-			// queueSize++
-
-			// diff = 0 * time.Millisecond
-			// log(LogLevelNormal, "tx queue: %d packets, next packet in %s", queueSize, diff)
-			// timerSend.Reset(diff)
-
-		case <-timerReceive.C:
-			pkts, err := radio.GetPacket()
-			if err != nil {
-				fatal("can not receive packets: %v", err)
-			}
-			timeReceive = time.Now()
-			if pkts != nil {
-				doReceive = false
-				for _, pkt := range pkts {
-					// pkt.StatCRC = 1
-					pkt.CountUs = uint32(time.Now().Sub(baseTime) / time.Microsecond)
-					log(LogLevelNormal, "rx: %s", pkt)
+			case <-timerReceive.C:
+				pkts, err := radio.GetPacket()
+				if err != nil {
+					fatal("can not receive packets: %v", err)
 				}
-				log(LogLevelNormal, "received %d packets, pushing to upstream ...", len(pkts))
+				timeReceive = time.Now()
+				if pkts != nil {
+					doReceive = false
+					for _, pkt := range pkts {
+						// pkt.StatCRC = 1
+						pkt.CountUs = uint32(time.Now().Sub(baseTime) / time.Microsecond)
+						log(LogLevelNormal, "rx: %s", pkt)
+						stat.Rxnb +=1 
+					}
+					log(LogLevelNormal, "received %d packets, pushing to upstream ...", len(pkts))
+					upstream(&fwd.Packet{
+						Token:     fwd.RndToken(),
+						Ident:     fwd.PushData,
+						RxPackets: pkts,
+					})
+				}
+				timerReceive.Reset(checkReceived)
+
+			case <-timerSend.C:
+				if queue == nil {
+					break
+				}
+				pkt := queue.pkt
+				queue = queue.next
+				queueSize--
+
+				log(LogLevelNormal, "tx: %s", pkt)
+
+				doReceive = false
+				if err = radio.Send(pkt); err != nil {
+					log(LogLevelError, "tx: can not send packet: %v", err)
+				}
+				stat.Rxfw +=1
+				log(LogLevelNormal, "tx: ok")
+
+				if queue == nil {
+					timerSend.Reset(never)
+					log(LogLevelNormal, "tx queue: 0 packets (no pending packets)")
+				} else {
+					diff := baseTime.Add(time.Duration(queue.pkt.CountUs) * time.Microsecond).Sub(time.Now())
+					log(LogLevelNormal, "tx queue: %d packets, next packet in %s", queueSize, diff)
+					timerSend.Reset(diff)
+				}
+
+			case <-tickerKeepalive.C:
+
 				upstream(&fwd.Packet{
-					Token:     fwd.RndToken(),
-					Ident:     fwd.PushData,
-					RxPackets: pkts,
+					Ident: fwd.PullData,
+					Token: fwd.RndToken(),
 				})
-			}
-			timerReceive.Reset(checkReceived)
 
-		case <-timerSend.C:
-			if queue == nil {
-				break
-			}
-			pkt := queue.pkt
-			queue = queue.next
-			queueSize--
-
-			log(LogLevelNormal, "tx: %s", pkt)
-
-			doReceive = false
-			if err = radio.Send(pkt); err != nil {
-				log(LogLevelError, "tx: can not send packet: %v", err)
-			}
-
-			log(LogLevelNormal, "tx: ok")
-
-			if queue == nil {
-				timerSend.Reset(never)
-				log(LogLevelNormal, "tx queue: 0 packets (no pending packets)")
-			} else {
-				diff := baseTime.Add(time.Duration(queue.pkt.CountUs) * time.Microsecond).Sub(time.Now())
-				log(LogLevelNormal, "tx queue: %d packets, next packet in %s", queueSize, diff)
-				timerSend.Reset(diff)
-			}
-
-		case <-tickerKeepalive.C:
-
-			upstream(&fwd.Packet{
-				Ident: fwd.PullData,
-				Token: fwd.RndToken(),
-			})
+			case <-tickerStatusReport.C:
+				stat.TimeStamp = time.Now().UTC()
+				fmt.Println("send statusReport", stat)
+				upstream(&fwd.Packet{
+						Token: fwd.RndToken(),
+						Ident: fwd.PushData,
+						Stat: stat,
+					})
+				stat.Rxnb = 0
+				stat.Rxfw = 0
+				stat.Dwnb = 0
 		}
+		
 	}
 }
 
